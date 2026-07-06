@@ -1,0 +1,16 @@
+{
+  "name": "whatsapp-bot",
+  "version": "3.0.0",
+  "description": "Bot WhatsApp interaktif dengan list dan tombol, deploy cloud",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "seed": "node seed.js"
+  },
+  "dependencies": {
+    "whatsapp-web.js": "^1.23.0",
+    "qrcode-terminal": "^0.12.0",
+    "better-sqlite3": "^11.7.0",
+    "puppeteer": "^22.0.0"
+  }
+}
