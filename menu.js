@@ -10,7 +10,7 @@ async function sendMainMenu(sock, to) {
     ]
   }];
   await sock.sendMessage(to, {
-    text: '✨ Selamat datang di GhoziTech!\nKetik /mulai untuk kembali.',
+    text: '✨ Selamat datang di *GhoziTech*!\nKetik /mulai untuk kembali.',
     footer: 'Pilih menu:',
     buttonText: 'Pilih',
     sections
@@ -115,7 +115,7 @@ async function sendOrderHistory(sock, to) {
 }
 
 async function sendCustomerService(sock, to) {
-  await sock.sendMessage(to, { text: '📞 Customer Service GhoziTech\nHubungi admin: wa.me/6285727688928' });
+  await sock.sendMessage(to, { text: '📞 Customer Service\nHubungi admin: wa.me/6285727688928' });
 }
 
 async function sendSettings(sock, to) {
