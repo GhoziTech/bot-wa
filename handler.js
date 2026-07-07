@@ -13,6 +13,7 @@ async function handleMessage(sock, msg) {
   if (!from || !from.endsWith('@s.whatsapp.net')) return;
   const phone = from.split('@')[0];
 
+  // Register user otomatis
   let user = db.prepare('SELECT * FROM users WHERE phone = ?').get(phone);
   if (!user) {
     db.prepare('INSERT INTO users (phone, name) VALUES (?, ?)').run(phone, msg.pushName || '');
@@ -22,21 +23,32 @@ async function handleMessage(sock, msg) {
   const state = getState(phone);
   const messageType = Object.keys(msg.message || {})[0];
   let text = '';
-  if (messageType === 'conversation') text = msg.message.conversation;
-  else if (messageType === 'extendedTextMessage') text = msg.message.extendedTextMessage.text;
-  else if (messageType === 'listResponseMessage') {
+
+  console.log(`[MSG] ${phone} type=${messageType}`);
+
+  if (messageType === 'conversation') {
+    text = msg.message.conversation;
+  } else if (messageType === 'extendedTextMessage') {
+    text = msg.message.extendedTextMessage.text;
+  } else if (messageType === 'listResponseMessage') {
     const rowId = msg.message.listResponseMessage.singleSelectReply.selectedRowId;
-    console.log(`List response dari ${phone}: ${rowId}`);
+    console.log(`List response: ${rowId}`);
     return await handleListAction(sock, from, phone, rowId);
+  } else if (messageType === 'buttonsResponseMessage') {
+    const buttonId = msg.message.buttonsResponseMessage.selectedButtonId;
+    console.log(`Button response: ${buttonId}`);
+    return await handleListAction(sock, from, phone, buttonId);
+  } else {
+    console.log('Unhandled message type:', JSON.stringify(msg.message).slice(0, 200));
+    return;
   }
 
   if (!text) return;
+  text = text.trim();
+  console.log(`[TEXT] ${phone}: ${text}`);
 
-  // Log untuk debug
-  console.log(`[${phone}] ${text}`);
-
-  // Ubah pemicu menjadi /mulai
-  if (text.trim() === '/mulai') {
+  // Trigger /mulai
+  if (text === '/mulai') {
     userStates.set(phone, { step: 'idle' });
     return await menu.sendMainMenu(sock, from);
   }
@@ -47,18 +59,18 @@ async function handleMessage(sock, msg) {
     return await handleAdminCommand(sock, msg);
   }
 
-  // State handling
+  // State khusus
   if (['order_confirm','order_payment','isi_saldo','topup_payment','settings_name','settings_email','settings_rekening'].includes(state.step)) {
     return await handleState(sock, from, phone, state, text.toLowerCase());
   }
 
-  // Teks yang menyerupai rowId
+  // Teks yang menyerupai rowId (untuk navigasi manual)
   const actions = ['profile','list_produk','kategori','stock','isi_saldo','order_history','customer_service','settings','kembali_menu','set_nama','set_email','set_rekening'];
   if (actions.includes(text) || text.startsWith('order_') || text.startsWith('lanjut_') || text.startsWith('kategori_')) {
     return await handleListAction(sock, from, phone, text);
   }
 
-  // Jika tidak dikenali, tampilkan menu utama
+  // Fallback: kirim menu utama
   await menu.sendMainMenu(sock, from);
 }
 
