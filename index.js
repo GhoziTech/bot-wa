@@ -1,101 +1,173 @@
-const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion } = require('baileys');
-const express = require('express');
-const QRCode = require('qrcode');
-const fs = require('fs');
-const handler = require('./handler');
+const db = require('./database');
+const menu = require('./menu');
+const { readFileSync } = require('fs');
+const userStates = new Map();
 
-const app = express();
-const PORT = process.env.PORT || 3000;
-let latestQR = '';
-let isOnline = false;
-
-app.get('/', (req, res) => {
-  if (latestQR) {
-    res.send(`
-      <html>
-        <head><title>GhoziTech Bot - Scan QR</title></head>
-        <body style="display:flex;justify-content:center;align-items:center;height:100vh;font-family:sans-serif;">
-          <div style="text-align:center;">
-            <h2>📱 Scan QR di bawah dengan WhatsApp</h2>
-            <img src="${latestQR}" style="border:2px solid #075e54;border-radius:10px;max-width:300px;" />
-            <p>Buka WhatsApp &gt; Linked Devices &gt; Link a Device</p>
-          </div>
-        </body>
-      </html>
-    `);
-  } else {
-    res.send('<h2>⏳ QR belum tersedia, atau bot sudah terhubung.</h2>');
-  }
-});
-
-app.get('/health', (req, res) => res.send('Bot is running'));
-
-const server = app.listen(PORT, '0.0.0.0', () => console.log(`✅ Health server di port ${PORT}`));
-
-let reconnectAttempts = 0;
-const MAX_RECONNECT_ATTEMPTS = 3;
-
-async function startBot() {
-  const { state, saveCreds } = await useMultiFileAuthState('session');
-  const { version } = await fetchLatestBaileysVersion();
-
-  const sock = makeWASocket({
-    version,
-    auth: state,
-    browser: ['GhoziTech', 'Chrome', '1.0.0'],
-    connectOptions: { maxRetries: 3, timeout: 30000 }
-  });
-
-  sock.ev.on('connection.update', async (update) => {
-    const { connection, lastDisconnect, qr } = update;
-
-    if (qr) {
-      QRCode.toDataURL(qr, (err, url) => {
-        if (!err) {
-          latestQR = url;
-          console.log('📱 QR Code tersedia! Buka URL Railway Anda untuk scan.');
-        }
-      });
-    }
-
-    if (connection === 'close') {
-      latestQR = '';
-      isOnline = false;
-      const statusCode = lastDisconnect?.error?.output?.statusCode;
-      const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
-
-      console.log(`Koneksi terputus. Alasan: ${lastDisconnect?.error?.message || 'unknown'}`);
-      if (shouldReconnect) {
-        reconnectAttempts++;
-        if (reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
-          console.log('⚠️ Terlalu banyak percobaan gagal. Menghapus session...');
-          try { fs.rmSync('session', { recursive: true, force: true }); } catch (err) {}
-          reconnectAttempts = 0;
-        }
-        setTimeout(() => startBot(), 10000);
-      } else {
-        console.log('Logout terdeteksi.');
-        reconnectAttempts = 0;
-      }
-    } else if (connection === 'open') {
-      console.log('✅ Bot GhoziTech berhasil terhubung!');
-      isOnline = true;
-      latestQR = '';
-      reconnectAttempts = 0;
-    }
-  });
-
-  sock.ev.on('creds.update', saveCreds);
-
-  sock.ev.on('messages.upsert', async ({ messages }) => {
-    const msg = messages[0];
-    if (!msg.message || msg.key.fromMe) return;
-    try {
-      await handler(sock, msg);
-    } catch (err) {
-      console.error('Handler error:', err);
-    }
-  });
+function getState(phone) {
+  if (!userStates.has(phone)) userStates.set(phone, { step: 'idle' });
+  return userStates.get(phone);
 }
 
-startBot().catch(err => console.error('Gagal start:', err));
+async function handleMessage(sock, msg) {
+  const from = msg.key.remoteJid;
+  // Terima semua format personal chat, tolak hanya broadcast & grup
+  if (!from || from === 'status@broadcast' || from.includes('@g.us')) return;
+  const phone = from.split('@')[0];
+
+  // Register user otomatis dengan nama dari pushName
+  let user = db.prepare('SELECT * FROM users WHERE phone = ?').get(phone);
+  if (!user) {
+    db.prepare('INSERT INTO users (phone, name) VALUES (?, ?)').run(phone, msg.pushName || '');
+    user = db.prepare('SELECT * FROM users WHERE phone = ?').get(phone);
+  }
+
+  const state = getState(phone);
+  const messageType = Object.keys(msg.message || {})[0];
+  let text = '';
+
+  console.log(`[MSG] ${phone} type=${messageType}`);
+
+  if (messageType === 'conversation') {
+    text = msg.message.conversation;
+  } else if (messageType === 'extendedTextMessage') {
+    text = msg.message.extendedTextMessage.text;
+  } else if (messageType === 'listResponseMessage') {
+    const rowId = msg.message.listResponseMessage.singleSelectReply.selectedRowId;
+    console.log(`List response: ${rowId}`);
+    return await handleListAction(sock, from, phone, rowId);
+  } else if (messageType === 'buttonsResponseMessage') {
+    const buttonId = msg.message.buttonsResponseMessage.selectedButtonId;
+    console.log(`Button response: ${buttonId}`);
+    return await handleListAction(sock, from, phone, buttonId);
+  } else {
+    console.log('Unhandled message type:', JSON.stringify(msg.message).slice(0, 200));
+    return;
+  }
+
+  if (!text) return;
+  text = text.trim();
+  console.log(`[TEXT] ${phone}: ${text}`);
+
+  // Trigger /mulai → selalu tampilkan menu interaktif
+  if (text === '/mulai') {
+    userStates.set(phone, { step: 'idle' });
+    return await menu.sendMainMenu(sock, from);
+  }
+
+  // Admin command (khusus nomor admin)
+  if (phone === '6285727688928' && text.startsWith('/')) {
+    const { handleAdminCommand } = require('./admin');
+    return await handleAdminCommand(sock, msg);
+  }
+
+  // State khusus (order, topup, settings, dll.)
+  if (['order_confirm','order_payment','isi_saldo','topup_payment','settings_name','settings_email','settings_rekening'].includes(state.step)) {
+    return await handleState(sock, from, phone, state, text.toLowerCase());
+  }
+
+  // Navigasi manual (user mengetik rowId seperti "profile", "list_produk", dll.)
+  const actions = ['profile','list_produk','kategori','stock','isi_saldo','order_history','customer_service','settings','kembali_menu','set_nama','set_email','set_rekening'];
+  if (actions.includes(text) || text.startsWith('order_') || text.startsWith('lanjut_') || text.startsWith('kategori_')) {
+    return await handleListAction(sock, from, phone, text);
+  }
+
+  // Fallback: jika tidak dikenali, tetap tampilkan menu utama (hanya sekali)
+  await menu.sendMainMenu(sock, from);
+}
+
+async function handleListAction(sock, from, phone, rowId) {
+  if (rowId === 'kembali_menu') { userStates.set(phone, { step: 'idle' }); return await menu.sendMainMenu(sock, from); }
+  if (rowId === 'profile') return await menu.sendProfile(sock, from);
+  if (rowId === 'list_produk') return await menu.sendProductList(sock, from, 1);
+  if (rowId === 'kategori') return await menu.sendCategoryList(sock, from);
+  if (rowId === 'stock') return await menu.sendStockList(sock, from);
+  if (rowId === 'isi_saldo') { userStates.set(phone, { step: 'isi_saldo' }); return sock.sendMessage(from, { text: '💰 Masukkan nominal top up (contoh: 50000):' }); }
+  if (rowId === 'order_history') return await menu.sendOrderHistory(sock, from);
+  if (rowId === 'customer_service') return await menu.sendCustomerService(sock, from);
+  if (rowId === 'settings') return await menu.sendSettings(sock, from);
+  if (rowId === 'set_nama') { userStates.set(phone, { step: 'settings_name' }); return sock.sendMessage(from, { text: '✏️ Masukkan nama baru:' }); }
+  if (rowId === 'set_email') { userStates.set(phone, { step: 'settings_email' }); return sock.sendMessage(from, { text: '📧 Masukkan email baru:' }); }
+  if (rowId === 'set_rekening') { userStates.set(phone, { step: 'settings_rekening' }); return sock.sendMessage(from, { text: '💳 Masukkan no. rekening baru:' }); }
+  if (rowId.startsWith('order_')) {
+    const productId = parseInt(rowId.split('_')[1]);
+    return await initiateOrder(sock, from, phone, productId);
+  }
+  if (rowId.startsWith('lanjut_')) {
+    const page = parseInt(rowId.split('_')[1]);
+    return await menu.sendProductList(sock, from, page);
+  }
+  if (rowId.startsWith('kategori_')) {
+    const cat = rowId.substring(9);
+    return await menu.sendCategoryProducts(sock, from, cat);
+  }
+  await menu.sendMainMenu(sock, from);
+}
+
+async function handleState(sock, from, phone, state, text) {
+  if (state.step === 'isi_saldo') {
+    const nominal = parseInt(text.replace(/[^0-9]/g, ''));
+    if (isNaN(nominal) || nominal < 1000) return sock.sendMessage(from, { text: '❌ Nominal tidak valid.' });
+    userStates.set(phone, { step: 'topup_payment', nominal });
+    const qris = readFileSync('./qris.jpg');
+    await sock.sendMessage(from, { image: qris, caption: `💳 Top Up Saldo Rp ${nominal.toLocaleString('id-ID')}\nScan QRIS, lalu balas *Sudah Bayar*.` });
+    return;
+  }
+  if (state.step === 'topup_payment') {
+    if (text === 'sudah bayar') {
+      await sock.sendMessage('6285727688928@s.whatsapp.net', { text: `🔔 Top Up dari ${phone} Rp ${state.nominal}\nKetik /topup ${phone} ${state.nominal}` });
+      await sock.sendMessage(from, { text: '✅ Permintaan top up dikirim ke admin.' });
+      userStates.set(phone, { step: 'idle' });
+    } else if (text === 'batal') { userStates.set(phone, { step: 'idle' }); await menu.sendMainMenu(sock, from); }
+    return;
+  }
+  if (state.step === 'order_confirm') {
+    if (text === 'ya') {
+      const product = db.prepare('SELECT * FROM products WHERE id=?').get(state.productId);
+      const stock = db.prepare('SELECT COUNT(*) AS cnt FROM credentials WHERE product_id=? AND is_sold=0').get(state.productId).cnt;
+      if (stock < 1) { userStates.set(phone, { step: 'idle' }); return sock.sendMessage(from, { text: '❌ Stok habis.' }); }
+      const result = db.prepare('INSERT INTO orders (user_phone, product_id, amount, status) VALUES (?,?,?,?)').run(phone, state.productId, product.price, 'pending');
+      const orderId = result.lastInsertRowid;
+      userStates.set(phone, { step: 'order_payment', orderId, productId: state.productId });
+      const qris = readFileSync('./qris.jpg');
+      await sock.sendMessage(from, { image: qris, caption: `💳 Order #${orderId} - ${product.name}\nTotal: Rp ${product.price.toLocaleString('id-ID')}\nScan QRIS lalu balas *Sudah Bayar*.` });
+    } else { userStates.set(phone, { step: 'idle' }); await menu.sendMainMenu(sock, from); }
+    return;
+  }
+  if (state.step === 'order_payment') {
+    if (text === 'sudah bayar') {
+      await sock.sendMessage('6285727688928@s.whatsapp.net', { text: `🔔 Pembayaran Order #${state.orderId} dari ${phone}\nKetik /verifikasi ${state.orderId}` });
+      await sock.sendMessage(from, { text: '✅ Pembayaran diteruskan ke admin. Menunggu verifikasi.' });
+      userStates.set(phone, { step: 'idle' });
+    } else if (text === 'batal') { userStates.set(phone, { step: 'idle' }); await menu.sendMainMenu(sock, from); }
+    return;
+  }
+  if (state.step === 'settings_name') {
+    db.prepare('UPDATE users SET name=? WHERE phone=?').run(text, phone);
+    userStates.set(phone, { step: 'idle' });
+    await sock.sendMessage(from, { text: '✅ Nama diubah.' });
+    return await menu.sendProfile(sock, from);
+  }
+  if (state.step === 'settings_email') {
+    db.prepare('UPDATE users SET email=? WHERE phone=?').run(text, phone);
+    userStates.set(phone, { step: 'idle' });
+    await sock.sendMessage(from, { text: '✅ Email diubah.' });
+    return await menu.sendProfile(sock, from);
+  }
+  if (state.step === 'settings_rekening') {
+    db.prepare('UPDATE users SET no_rekening=? WHERE phone=?').run(text, phone);
+    userStates.set(phone, { step: 'idle' });
+    await sock.sendMessage(from, { text: '✅ No. Rekening diubah.' });
+    return await menu.sendProfile(sock, from);
+  }
+}
+
+async function initiateOrder(sock, from, phone, productId) {
+  const product = db.prepare('SELECT * FROM products WHERE id=?').get(productId);
+  if (!product) return sock.sendMessage(from, { text: '❌ Produk tidak ditemukan.' });
+  const stock = db.prepare('SELECT COUNT(*) AS cnt FROM credentials WHERE product_id=? AND is_sold=0').get(productId).cnt;
+  if (stock < 1) return sock.sendMessage(from, { text: '❌ Stok habis.' });
+  userStates.set(phone, { step: 'order_confirm', productId });
+  await sock.sendMessage(from, { text: `🛒 *${product.name}*\nHarga: Rp.${product.price.toLocaleString('id-ID')}\nStok: ${stock}\n\nBalas *ya* untuk lanjut bayar, atau *batal*.` });
+}
+
+module.exports = handleMessage;
