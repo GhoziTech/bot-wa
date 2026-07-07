@@ -10,7 +10,7 @@ function getState(phone) {
 
 async function handleMessage(sock, msg) {
   const from = msg.key.remoteJid;
-  if (!from || !from.endsWith('@s.whatsapp.net')) return;
+  if (!from || from === 'status@broadcast' || from.includes('@g.us')) return;
   const phone = from.split('@')[0];
 
   // Register user otomatis
