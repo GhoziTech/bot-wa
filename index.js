@@ -1,13 +1,35 @@
 const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion } = require('baileys');
-const qrcode = require('qrcode-terminal');
 const express = require('express');
+const QRCode = require('qrcode');
 const fs = require('fs');
 const handler = require('./handler');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-app.get('/', (req, res) => res.send('Bot is running'));
-app.listen(PORT, () => console.log(`Health check server di port ${PORT}`));
+
+let latestQR = '';
+
+// Halaman web untuk menampilkan QR
+app.get('/', (req, res) => {
+  if (latestQR) {
+    res.send(`
+      <html>
+        <head><title>WhatsApp Bot - Scan QR</title></head>
+        <body style="display:flex;justify-content:center;align-items:center;height:100vh;font-family:sans-serif;">
+          <div style="text-align:center;">
+            <h2>📱 Scan QR di bawah dengan WhatsApp</h2>
+            <img src="${latestQR}" style="border:2px solid #075e54;border-radius:10px;max-width:300px;" />
+            <p>Buka WhatsApp &gt; Linked Devices &gt; Link a Device</p>
+          </div>
+        </body>
+      </html>
+    `);
+  } else {
+    res.send('<h2>✅ Bot sudah terhubung, atau QR belum tersedia.</h2>');
+  }
+});
+
+app.listen(PORT, () => console.log(`QR & health server di port ${PORT}`));
 
 let reconnectAttempts = 0;
 const MAX_RECONNECT_ATTEMPTS = 3;
@@ -20,28 +42,24 @@ async function startBot() {
     version,
     auth: state,
     browser: ['Ubuntu', 'Chrome', '20.0.0'],
-    connectOptions: {
-      maxRetries: 3,
-      timeout: 30000
-    }
+    connectOptions: { maxRetries: 3, timeout: 30000 }
   });
 
   sock.ev.on('connection.update', async (update) => {
-    const { connection, lastDisconnect, qr, pairingCode } = update;
+    const { connection, lastDisconnect, qr } = update;
 
-    // Tampilkan QR kecil
     if (qr) {
-      console.log('Scan QR (kecil) di bawah:\n');
-      qrcode.generate(qr, { small: true });
-    }
-
-    // Tampilkan pairing code jika ada
-    if (pairingCode) {
-      console.log('🔑 Pairing Code:', pairingCode);
-      console.log('Buka WhatsApp > Linked Devices > Link with phone number > masukkan kode di atas');
+      // Konversi QR ke data URL (base64)
+      QRCode.toDataURL(qr, (err, url) => {
+        if (!err) {
+          latestQR = url;
+          console.log('📱 QR Code tersedia! Buka URL Railway Anda untuk scan.');
+        }
+      });
     }
 
     if (connection === 'close') {
+      latestQR = '';
       const statusCode = lastDisconnect?.error?.output?.statusCode;
       const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
 
@@ -49,7 +67,7 @@ async function startBot() {
       if (shouldReconnect) {
         reconnectAttempts++;
         if (reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
-          console.log('⚠️ Terlalu banyak percobaan gagal. Menghapus session...');
+          console.log('⚠️ Gagal 3x, hapus session...');
           try { fs.rmSync('session', { recursive: true, force: true }); } catch (err) {}
           reconnectAttempts = 0;
         }
@@ -60,6 +78,7 @@ async function startBot() {
       }
     } else if (connection === 'open') {
       console.log('✅ Bot berhasil terhubung!');
+      latestQR = '';
       reconnectAttempts = 0;
     }
   });
@@ -75,8 +94,6 @@ async function startBot() {
       console.error('Handler error:', err);
     }
   });
-
-  // TIDAK memanggil requestPairingCode di sini. Biarkan Baileys menentukan apakah QR atau pairing code.
 }
 
 startBot().catch(err => console.error('Gagal start:', err));
