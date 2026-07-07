@@ -41,7 +41,7 @@ async function startBot() {
       if (shouldReconnect) {
         reconnectAttempts++;
         if (reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
-          console.log('⚠️ Terlalu banyak percobaan gagal. Menghapus session dan memulai ulang...');
+          console.log('⚠️ Terlalu banyak percobaan gagal. Menghapus session...');
           try { fs.rmSync('session', { recursive: true, force: true }); } catch (err) {}
           reconnectAttempts = 0;
         }
