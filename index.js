@@ -27,8 +27,21 @@ const client = new Client({
             '--disable-gpu',
             '--disable-software-rasterizer',
             '--disable-extensions',
-            '--no-zygote'
-        ],
+            '--no-zygote',
+            '--disable-features=TranslateUI',
+            '--disable-features=IsolateOrigins,site-per-process',
+            '--disable-sync',
+            '--disable-background-networking',
+            '--disable-default-apps',
+            '--hide-scrollbars',
+            '--metrics-recording-only',
+            '--mute-audio',
+            '--no-first-run',
+            '--safebrowsing-disable-auto-update',
+            '--disable-breakpad',
+            '--disable-crash-reporter',
+            '--disable-dbus'   // tambahan penting
+        ],    
         executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || '/usr/bin/chromium'
     }
 });
