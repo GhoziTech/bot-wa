@@ -6,15 +6,16 @@ const handler = require('./handler');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// HTTP health check (untuk UptimeRobot)
+// Health check server
 app.get('/', (req, res) => {
-  res.send('Bot is running');
+    res.send('Bot is running');
 });
 
 app.listen(PORT, () => {
-  console.log(`Health check server di port ${PORT}`);
+    console.log(`Health check server di port ${PORT}`);
 });
 
+// Inisialisasi WhatsApp Client
 const client = new Client({
     authStrategy: new LocalAuth({ dataPath: 'session' }),
     puppeteer: {
@@ -26,32 +27,35 @@ const client = new Client({
             '--disable-gpu',
             '--disable-software-rasterizer',
             '--disable-extensions',
-            '--no-zygote',
-            // Hindari single-process
-            // '--single-process',  <-- JANGAN DIPAKAI
+            '--no-zygote'
         ],
         executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || '/usr/bin/chromium'
     }
 });
-});
 
+// Event saat QR code muncul
 client.on('qr', (qr) => {
     console.log('Scan QR di bawah ini dengan WhatsApp (Linked Devices):\n');
     qrcode.generate(qr, { small: true });
 });
 
+// Event saat bot siap
 client.on('ready', () => {
     console.log('✅ Bot berhasil terhubung!');
 });
 
+// Event saat menerima pesan
 client.on('message', async (message) => {
+    // Abaikan broadcast dan grup
     if (message.from === 'status@broadcast' || message.from.includes('@g.us')) return;
+
     try {
         await handler(client, message);
     } catch (err) {
-        console.error('Error:', err);
-        client.sendMessage(message.from, '⚠️ Terjadi kesalahan, coba lagi.');
+        console.error('Error handling message:', err);
+        client.sendMessage(message.from, '⚠️ Terjadi kesalahan, coba lagi nanti.');
     }
 });
 
+// Mulai bot
 client.initialize();
