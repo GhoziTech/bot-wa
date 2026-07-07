@@ -1,5 +1,4 @@
 const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion } = require('@whiskeysockets/baileys');
-const qrcode = require('qrcode-terminal');
 const express = require('express');
 const fs = require('fs');
 const handler = require('./handler');
@@ -20,19 +19,16 @@ async function startBot() {
     version,
     auth: state,
     browser: ['Ubuntu', 'Chrome', '20.0.0'],
-    connectOptions: {
-      maxRetries: 5,
-      timeout: 60000
-    }
+    connectOptions: { maxRetries: 5, timeout: 60000 },
+    printQRInTerminal: false   // matikan QR
   });
 
-  sock.ev.on('connection.update', (update) => {
-    const { connection, lastDisconnect, qr } = update;
+  sock.ev.on('connection.update', async (update) => {
+    const { connection, lastDisconnect, pairingCode } = update;
 
-    if (qr) {
-      console.log('Scan QR di bawah ini dengan WhatsApp (Linked Devices):\n');
-      qrcode.generate(qr, { small: true });
-      reconnectAttempts = 0;
+    if (pairingCode) {
+      console.log('🔑 Pairing Code:', pairingCode);
+      console.log('Buka WhatsApp > Settings > Linked Devices > Link with phone number > masukkan kode di atas');
     }
 
     if (connection === 'close') {
@@ -40,8 +36,6 @@ async function startBot() {
       const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
 
       console.log(`Koneksi terputus. Alasan: ${lastDisconnect?.error?.message || 'unknown'}`);
-      console.log(`Reconnect: ${shouldReconnect}`);
-
       if (shouldReconnect) {
         reconnectAttempts++;
         if (reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
@@ -51,7 +45,7 @@ async function startBot() {
         }
         setTimeout(() => startBot(), 10000);
       } else {
-        console.log('Logout terdeteksi. Hapus folder session jika ingin login ulang.');
+        console.log('Logout terdeteksi.');
         reconnectAttempts = 0;
       }
     } else if (connection === 'open') {
@@ -71,6 +65,10 @@ async function startBot() {
       console.error('Handler error:', err);
     }
   });
+
+  // Minta pairing code untuk nomor bot
+  const phoneNumber = '6285727688928';   // GANTI dengan nomor bot Anda
+  await sock.requestPairingCode(phoneNumber);
 }
 
 startBot().catch(err => console.error('Gagal start:', err));
