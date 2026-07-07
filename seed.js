@@ -29,5 +29,5 @@ const products = [
 const insert = db.prepare('INSERT INTO products (name, description, category, price, rating, sold) VALUES (@name, @description, @category, @price, @rating, @sold)');
 const insertAll = db.transaction(() => { for (const p of products) insert.run(p); });
 insertAll();
-console.log('✅ 21 produk GhoziTech berhasil ditambahkan.');
+console.log('✅ 21 produk berhasil ditambahkan.');
 process.exit(0);
