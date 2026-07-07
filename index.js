@@ -23,14 +23,16 @@ const client = new Client({
             '--no-sandbox',
             '--disable-setuid-sandbox',
             '--disable-dev-shm-usage',
-            '--disable-accelerated-2d-canvas',
-            '--no-first-run',
+            '--disable-gpu',
+            '--disable-software-rasterizer',
+            '--disable-extensions',
             '--no-zygote',
-            '--single-process',
-            '--disable-gpu'
+            // Hindari single-process
+            // '--single-process',  <-- JANGAN DIPAKAI
         ],
-        executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined
+        executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || '/usr/bin/chromium'
     }
+});
 });
 
 client.on('qr', (qr) => {
