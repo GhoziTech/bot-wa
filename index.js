@@ -2,6 +2,7 @@ const { default: makeWASocket, useMultiFileAuthState, DisconnectReason } = requi
 const { Boom } = require('@hapi/boom');
 const qrcode = require('qrcode-terminal');
 const express = require('express');
+const fs = require('fs');
 const handler = require('./handler');
 
 const app = express();
@@ -9,26 +10,52 @@ const PORT = process.env.PORT || 3000;
 app.get('/', (req, res) => res.send('Bot is running'));
 app.listen(PORT, () => console.log(`Health check server di port ${PORT}`));
 
+let reconnectAttempts = 0;
+const MAX_RECONNECT_ATTEMPTS = 3;
+
 async function startBot() {
   const { state, saveCreds } = await useMultiFileAuthState('session');
+
   const sock = makeWASocket({
     auth: state,
-    browser: ['MyBot', 'Chrome', '1.0.0']
+    browser: ['MyBot', 'Safari', '1.0.0'],
+    mobile: true,
+    connectOptions: { maxRetries: 5 }
   });
 
   sock.ev.on('connection.update', (update) => {
     const { connection, lastDisconnect, qr } = update;
+
     if (qr) {
       console.log('Scan QR di bawah ini dengan WhatsApp (Linked Devices):\n');
       qrcode.generate(qr, { small: true });
+      reconnectAttempts = 0; // reset jika QR muncul
     }
+
     if (connection === 'close') {
-      const shouldReconnect = (lastDisconnect?.error instanceof Boom) ?
-        lastDisconnect.error.output.statusCode !== DisconnectReason.loggedOut : true;
-      if (shouldReconnect) setTimeout(startBot, 5000);
-      else console.log('Logout. Hapus folder session dan deploy ulang.');
+      const statusCode = lastDisconnect?.error?.output?.statusCode;
+      const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
+
+      console.log(`Koneksi terputus. Alasan: ${lastDisconnect?.error?.message || 'unknown'}`);
+      console.log(`Reconnect: ${shouldReconnect}`);
+
+      if (shouldReconnect) {
+        reconnectAttempts++;
+        if (reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
+          console.log('⚠️ Terlalu banyak percobaan gagal. Menghapus session dan memulai ulang...');
+          try {
+            fs.rmSync('session', { recursive: true, force: true });
+          } catch (err) {}
+          reconnectAttempts = 0;
+        }
+        setTimeout(() => startBot(), 7000);
+      } else {
+        console.log('Logout terdeteksi. Hapus folder session jika ingin login ulang.');
+        reconnectAttempts = 0;
+      }
     } else if (connection === 'open') {
       console.log('✅ Bot berhasil terhubung!');
+      reconnectAttempts = 0;
     }
   });
 
