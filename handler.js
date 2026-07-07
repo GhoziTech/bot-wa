@@ -10,9 +10,11 @@ function getState(phone) {
 
 async function handleMessage(sock, msg) {
   const from = msg.key.remoteJid;
+  // Terima semua format personal chat, tolak hanya broadcast & grup
   if (!from || from === 'status@broadcast' || from.includes('@g.us')) return;
   const phone = from.split('@')[0];
 
+  // Register user otomatis dengan nama dari pushName
   let user = db.prepare('SELECT * FROM users WHERE phone = ?').get(phone);
   if (!user) {
     db.prepare('INSERT INTO users (phone, name) VALUES (?, ?)').run(phone, msg.pushName || '');
@@ -46,30 +48,30 @@ async function handleMessage(sock, msg) {
   text = text.trim();
   console.log(`[TEXT] ${phone}: ${text}`);
 
-  // Trigger /mulai
+  // Trigger /mulai → selalu tampilkan menu interaktif
   if (text === '/mulai') {
     userStates.set(phone, { step: 'idle' });
     return await menu.sendMainMenu(sock, from);
   }
 
-  // Admin command
+  // Admin command (khusus nomor admin)
   if (phone === '6285727688928' && text.startsWith('/')) {
     const { handleAdminCommand } = require('./admin');
     return await handleAdminCommand(sock, msg);
   }
 
-  // State handling
+  // State khusus (order, topup, settings, dll.)
   if (['order_confirm','order_payment','isi_saldo','topup_payment','settings_name','settings_email','settings_rekening'].includes(state.step)) {
     return await handleState(sock, from, phone, state, text.toLowerCase());
   }
 
-  // Navigasi manual
+  // Navigasi manual (user mengetik rowId seperti "profile", "list_produk", dll.)
   const actions = ['profile','list_produk','kategori','stock','isi_saldo','order_history','customer_service','settings','kembali_menu','set_nama','set_email','set_rekening'];
   if (actions.includes(text) || text.startsWith('order_') || text.startsWith('lanjut_') || text.startsWith('kategori_')) {
     return await handleListAction(sock, from, phone, text);
   }
 
-  // Fallback ke menu utama (hanya sekali)
+  // Fallback: jika tidak dikenali, tetap tampilkan menu utama
   await menu.sendMainMenu(sock, from);
 }
 
