@@ -1,4 +1,5 @@
-const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion } = require('@whiskeysockets/baileys');
+const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion } = require('baileys');
+const qrcode = require('qrcode-terminal');
 const express = require('express');
 const fs = require('fs');
 const handler = require('./handler');
@@ -19,16 +20,25 @@ async function startBot() {
     version,
     auth: state,
     browser: ['Ubuntu', 'Chrome', '20.0.0'],
-    connectOptions: { maxRetries: 5, timeout: 60000 },
-    printQRInTerminal: false   // matikan QR
+    connectOptions: {
+      maxRetries: 3,
+      timeout: 30000
+    }
   });
 
   sock.ev.on('connection.update', async (update) => {
-    const { connection, lastDisconnect, pairingCode } = update;
+    const { connection, lastDisconnect, qr, pairingCode } = update;
 
+    // Tampilkan QR kecil
+    if (qr) {
+      console.log('Scan QR (kecil) di bawah:\n');
+      qrcode.generate(qr, { small: true });
+    }
+
+    // Tampilkan pairing code jika ada
     if (pairingCode) {
       console.log('🔑 Pairing Code:', pairingCode);
-      console.log('Buka WhatsApp > Settings > Linked Devices > Link with phone number > masukkan kode di atas');
+      console.log('Buka WhatsApp > Linked Devices > Link with phone number > masukkan kode di atas');
     }
 
     if (connection === 'close') {
@@ -66,9 +76,7 @@ async function startBot() {
     }
   });
 
-  // Minta pairing code untuk nomor bot
-  const phoneNumber = '6285727688928';   // GANTI dengan nomor bot Anda
-  await sock.requestPairingCode(phoneNumber);
+  // TIDAK memanggil requestPairingCode di sini. Biarkan Baileys menentukan apakah QR atau pairing code.
 }
 
 startBot().catch(err => console.error('Gagal start:', err));
