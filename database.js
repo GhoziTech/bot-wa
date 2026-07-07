@@ -12,7 +12,6 @@ db.exec(`CREATE TABLE IF NOT EXISTS users (
     no_rekening TEXT,
     registered_at DATETIME DEFAULT CURRENT_TIMESTAMP
 )`);
-
 db.exec(`CREATE TABLE IF NOT EXISTS products (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL,
@@ -23,7 +22,6 @@ db.exec(`CREATE TABLE IF NOT EXISTS products (
     sold INTEGER DEFAULT 0,
     is_active INTEGER DEFAULT 1
 )`);
-
 db.exec(`CREATE TABLE IF NOT EXISTS credentials (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     product_id INTEGER NOT NULL,
@@ -33,7 +31,6 @@ db.exec(`CREATE TABLE IF NOT EXISTS credentials (
     order_id INTEGER,
     FOREIGN KEY(product_id) REFERENCES products(id)
 )`);
-
 db.exec(`CREATE TABLE IF NOT EXISTS orders (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_phone TEXT,
