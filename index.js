@@ -9,7 +9,13 @@ const PORT = process.env.PORT || 3000;
 
 let latestQR = '';
 
-// Halaman web untuk menampilkan QR
+// Middleware untuk log request
+app.use((req, res, next) => {
+  console.log(`[HTTP] ${req.method} ${req.url}`);
+  next();
+});
+
+// Halaman utama: tampilkan QR
 app.get('/', (req, res) => {
   if (latestQR) {
     res.send(`
@@ -25,11 +31,22 @@ app.get('/', (req, res) => {
       </html>
     `);
   } else {
-    res.send('<h2>✅ Bot sudah terhubung, atau QR belum tersedia.</h2>');
+    res.send('<h2>⏳ QR belum tersedia. Tunggu beberapa saat lalu refresh.</h2>');
   }
 });
 
-app.listen(PORT, () => console.log(`QR & health server di port ${PORT}`));
+// Health check (untuk UptimeRobot)
+app.get('/health', (req, res) => res.send('Bot is running'));
+
+// Tangani semua rute lain agar tidak 404
+app.use((req, res) => {
+  res.redirect('/');
+});
+
+const server = app.listen(PORT, '0.0.0.0', () => {
+  console.log(`✅ Server berjalan di http://0.0.0.0:${PORT}`);
+  console.log(`QR & health server di port ${PORT}`);
+});
 
 let reconnectAttempts = 0;
 const MAX_RECONNECT_ATTEMPTS = 3;
@@ -49,7 +66,6 @@ async function startBot() {
     const { connection, lastDisconnect, qr } = update;
 
     if (qr) {
-      // Konversi QR ke data URL (base64)
       QRCode.toDataURL(qr, (err, url) => {
         if (!err) {
           latestQR = url;
