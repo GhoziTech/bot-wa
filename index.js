@@ -8,8 +8,9 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 let latestQR = '';
+let isOnline = false;
 
-// Middleware untuk log request
+// Middleware log request
 app.use((req, res, next) => {
   console.log(`[HTTP] ${req.method} ${req.url}`);
   next();
@@ -35,17 +36,14 @@ app.get('/', (req, res) => {
   }
 });
 
-// Health check (untuk UptimeRobot)
+// Health check untuk UptimeRobot
 app.get('/health', (req, res) => res.send('Bot is running'));
 
-// Tangani semua rute lain agar tidak 404
-app.use((req, res) => {
-  res.redirect('/');
-});
+// Tangani rute tidak dikenal
+app.use((req, res) => res.redirect('/'));
 
 const server = app.listen(PORT, '0.0.0.0', () => {
   console.log(`✅ Server berjalan di http://0.0.0.0:${PORT}`);
-  console.log(`QR & health server di port ${PORT}`);
 });
 
 let reconnectAttempts = 0;
@@ -76,6 +74,7 @@ async function startBot() {
 
     if (connection === 'close') {
       latestQR = '';
+      isOnline = false;
       const statusCode = lastDisconnect?.error?.output?.statusCode;
       const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
 
@@ -83,7 +82,7 @@ async function startBot() {
       if (shouldReconnect) {
         reconnectAttempts++;
         if (reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
-          console.log('⚠️ Gagal 3x, hapus session...');
+          console.log('⚠️ Terlalu banyak percobaan gagal. Menghapus session...');
           try { fs.rmSync('session', { recursive: true, force: true }); } catch (err) {}
           reconnectAttempts = 0;
         }
@@ -94,6 +93,7 @@ async function startBot() {
       }
     } else if (connection === 'open') {
       console.log('✅ Bot berhasil terhubung!');
+      isOnline = true;
       latestQR = '';
       reconnectAttempts = 0;
     }
@@ -102,6 +102,7 @@ async function startBot() {
   sock.ev.on('creds.update', saveCreds);
 
   sock.ev.on('messages.upsert', async ({ messages }) => {
+    if (!isOnline) return;
     const msg = messages[0];
     if (!msg.message || msg.key.fromMe) return;
     try {
