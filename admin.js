@@ -1,6 +1,4 @@
 const db = require('./database');
-const { readFileSync } = require('fs');
-
 async function handleAdminCommand(sock, msg) {
   const from = msg.key.remoteJid;
   const text = msg.message.conversation || msg.message.extendedTextMessage?.text;
@@ -34,16 +32,6 @@ async function handleAdminCommand(sock, msg) {
     if (!productId || !email || !password) return sock.sendMessage(from, { text: 'Format: /addcred <product_id> <email> <password>' });
     db.prepare('INSERT INTO credentials (product_id, email, password) VALUES (?,?,?)').run(productId, email, password);
     await sock.sendMessage(from, { text: '✅ Kredensial ditambahkan.' });
-  } else if (cmd === 'stock') {
-    const products = db.prepare(`SELECT p.id, p.name, (SELECT COUNT(*) FROM credentials WHERE product_id=p.id AND is_sold=0) AS stock FROM products p`).all();
-    let txt = '📦 Stok Produk:\n';
-    products.forEach(p => txt += `${p.id}. ${p.name} ➜ ${p.stock}\n`);
-    await sock.sendMessage(from, { text: txt });
-  } else if (cmd === 'addproduct') {
-    const name = args[1], price = parseInt(args[2]), category = args[3] || '', desc = args.slice(4).join(' ');
-    if (!name || !price) return sock.sendMessage(from, { text: 'Format: /addproduct <nama> <harga> <kategori> <deskripsi>' });
-    db.prepare('INSERT INTO products (name, price, category, description) VALUES (?,?,?,?)').run(name, price, category, desc);
-    await sock.sendMessage(from, { text: '✅ Produk ditambahkan.' });
   }
 }
 
