@@ -13,7 +13,6 @@ async function handleMessage(sock, msg) {
   if (!from || from === 'status@broadcast' || from.includes('@g.us')) return;
   const phone = from.split('@')[0];
 
-  // Register user otomatis
   let user = db.prepare('SELECT * FROM users WHERE phone = ?').get(phone);
   if (!user) {
     db.prepare('INSERT INTO users (phone, name) VALUES (?, ?)').run(phone, msg.pushName || '');
@@ -59,18 +58,18 @@ async function handleMessage(sock, msg) {
     return await handleAdminCommand(sock, msg);
   }
 
-  // State khusus
+  // State handling
   if (['order_confirm','order_payment','isi_saldo','topup_payment','settings_name','settings_email','settings_rekening'].includes(state.step)) {
     return await handleState(sock, from, phone, state, text.toLowerCase());
   }
 
-  // Teks yang menyerupai rowId (untuk navigasi manual)
+  // Navigasi manual
   const actions = ['profile','list_produk','kategori','stock','isi_saldo','order_history','customer_service','settings','kembali_menu','set_nama','set_email','set_rekening'];
   if (actions.includes(text) || text.startsWith('order_') || text.startsWith('lanjut_') || text.startsWith('kategori_')) {
     return await handleListAction(sock, from, phone, text);
   }
 
-  // Fallback: kirim menu utama
+  // Fallback ke menu utama (hanya sekali)
   await menu.sendMainMenu(sock, from);
 }
 
