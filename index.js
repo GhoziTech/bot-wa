@@ -18,8 +18,7 @@ async function startBot() {
 
   const sock = makeWASocket({
     auth: state,
-    browser: ['MyBot', 'Safari', '1.0.0'],
-    mobile: true,
+    browser: ['MyBot', 'Chrome', '1.0.0'],
     connectOptions: { maxRetries: 5 }
   });
 
@@ -29,7 +28,7 @@ async function startBot() {
     if (qr) {
       console.log('Scan QR di bawah ini dengan WhatsApp (Linked Devices):\n');
       qrcode.generate(qr, { small: true });
-      reconnectAttempts = 0; // reset jika QR muncul
+      reconnectAttempts = 0;
     }
 
     if (connection === 'close') {
@@ -43,9 +42,7 @@ async function startBot() {
         reconnectAttempts++;
         if (reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
           console.log('⚠️ Terlalu banyak percobaan gagal. Menghapus session dan memulai ulang...');
-          try {
-            fs.rmSync('session', { recursive: true, force: true });
-          } catch (err) {}
+          try { fs.rmSync('session', { recursive: true, force: true }); } catch (err) {}
           reconnectAttempts = 0;
         }
         setTimeout(() => startBot(), 7000);
