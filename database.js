@@ -43,5 +43,4 @@ db.exec(`CREATE TABLE IF NOT EXISTS orders (
     FOREIGN KEY(product_id) REFERENCES products(id),
     FOREIGN KEY(credential_id) REFERENCES credentials(id)
 )`);
-
 module.exports = db;
