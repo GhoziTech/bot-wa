@@ -13,7 +13,6 @@ async function handleMessage(sock, msg) {
   if (!from || !from.endsWith('@s.whatsapp.net')) return;
   const phone = from.split('@')[0];
 
-  // Register otomatis
   let user = db.prepare('SELECT * FROM users WHERE phone = ?').get(phone);
   if (!user) {
     db.prepare('INSERT INTO users (phone, name) VALUES (?, ?)').run(phone, msg.pushName || '');
@@ -37,18 +36,15 @@ async function handleMessage(sock, msg) {
     return await menu.sendMainMenu(sock, from);
   }
 
-  // Admin command
   if (phone === '6285727688928' && text.startsWith('/')) {
     const { handleAdminCommand } = require('./admin');
     return await handleAdminCommand(sock, msg);
   }
 
-  // State handling
   if (['order_confirm','order_payment','isi_saldo','topup_payment','settings_name','settings_email','settings_rekening'].includes(state.step)) {
     return await handleState(sock, from, phone, state, text.toLowerCase());
   }
 
-  // Teks yang menyerupai rowId
   const actions = ['profile','list_produk','kategori','stock','isi_saldo','order_history','customer_service','settings','kembali_menu','set_nama','set_email','set_rekening'];
   if (actions.includes(text) || text.startsWith('order_') || text.startsWith('lanjut_') || text.startsWith('kategori_')) {
     return await handleListAction(sock, from, phone, text);
