@@ -6,22 +6,14 @@ const handler = require('./handler');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-
 let latestQR = '';
 let isOnline = false;
 
-// Middleware log request
-app.use((req, res, next) => {
-  console.log(`[HTTP] ${req.method} ${req.url}`);
-  next();
-});
-
-// Halaman utama: tampilkan QR
 app.get('/', (req, res) => {
   if (latestQR) {
     res.send(`
       <html>
-        <head><title>WhatsApp Bot - Scan QR</title></head>
+        <head><title>GhoziTech Bot - Scan QR</title></head>
         <body style="display:flex;justify-content:center;align-items:center;height:100vh;font-family:sans-serif;">
           <div style="text-align:center;">
             <h2>📱 Scan QR di bawah dengan WhatsApp</h2>
@@ -32,19 +24,13 @@ app.get('/', (req, res) => {
       </html>
     `);
   } else {
-    res.send('<h2>⏳ QR belum tersedia. Tunggu beberapa saat lalu refresh.</h2>');
+    res.send('<h2>⏳ QR belum tersedia, atau bot sudah terhubung.</h2>');
   }
 });
 
-// Health check untuk UptimeRobot
 app.get('/health', (req, res) => res.send('Bot is running'));
 
-// Tangani rute tidak dikenal
-app.use((req, res) => res.redirect('/'));
-
-const server = app.listen(PORT, '0.0.0.0', () => {
-  console.log(`✅ Server berjalan di http://0.0.0.0:${PORT}`);
-});
+const server = app.listen(PORT, '0.0.0.0', () => console.log(`✅ Health server di port ${PORT}`));
 
 let reconnectAttempts = 0;
 const MAX_RECONNECT_ATTEMPTS = 3;
@@ -56,7 +42,7 @@ async function startBot() {
   const sock = makeWASocket({
     version,
     auth: state,
-    browser: ['Ubuntu', 'Chrome', '20.0.0'],
+    browser: ['GhoziTech', 'Chrome', '1.0.0'],
     connectOptions: { maxRetries: 3, timeout: 30000 }
   });
 
@@ -92,7 +78,7 @@ async function startBot() {
         reconnectAttempts = 0;
       }
     } else if (connection === 'open') {
-      console.log('✅ Bot berhasil terhubung!');
+      console.log('✅ Bot GhoziTech berhasil terhubung!');
       isOnline = true;
       latestQR = '';
       reconnectAttempts = 0;
@@ -102,13 +88,8 @@ async function startBot() {
   sock.ev.on('creds.update', saveCreds);
 
   sock.ev.on('messages.upsert', async ({ messages }) => {
-  // Hapus pengecekan isOnline agar semua pesan diproses
     const msg = messages[0];
     if (!msg.message || msg.key.fromMe) return;
-  
-    // Log untuk memastikan pesan masuk terdeteksi
-    console.log(`[INCOMING] from ${msg.key.remoteJid}, type: ${Object.keys(msg.message)[0]}`);
-  
     try {
       await handler(sock, msg);
     } catch (err) {
