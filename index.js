@@ -30,14 +30,14 @@ app.get('/', (req, res) => {
       </html>
     `);
   } else {
-    res.send('<h2>⏳ QR belum tersedia. Tunggu beberapa saat lalu refresh.</h2>');
+    res.send('<h2>⏳ QR belum tersedia. Tunggu sebentar lalu refresh.</h2>');
   }
 });
 
 app.get('/health', (req, res) => res.send('Bot is running'));
 app.use((req, res) => res.redirect('/'));
 
-const server = app.listen(PORT, '0.0.0.0', () => {
+app.listen(PORT, '0.0.0.0', () => {
   console.log(`✅ Server berjalan di http://0.0.0.0:${PORT}`);
 });
 
@@ -62,7 +62,7 @@ async function startBot() {
       QRCode.toDataURL(qr, (err, url) => {
         if (!err) {
           latestQR = url;
-          console.log('📱 QR Code tersedia! Buka URL Railway Anda untuk scan.');
+          console.log('📱 QR Code tersedia! Buka URL Railway untuk scan.');
         }
       });
     }
@@ -87,7 +87,7 @@ async function startBot() {
         reconnectAttempts = 0;
       }
     } else if (connection === 'open') {
-      console.log('✅ Bot berhasil terhubung!');
+      console.log('✅ Bot GhoziTech berhasil terhubung!');
       isOnline = true;
       latestQR = '';
       reconnectAttempts = 0;
@@ -100,7 +100,9 @@ async function startBot() {
     if (!isOnline) return;
     const msg = messages[0];
     if (!msg.message || msg.key.fromMe) return;
+
     console.log(`[INCOMING] from ${msg.key.remoteJid}, type: ${Object.keys(msg.message)[0]}`);
+
     try {
       await handler(sock, msg);
     } catch (err) {
