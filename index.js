@@ -1,5 +1,4 @@
-const { default: makeWASocket, useMultiFileAuthState, DisconnectReason } = require('baileys');
-const { Boom } = require('@hapi/boom');
+const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion } = require('@whiskeysockets/baileys');
 const qrcode = require('qrcode-terminal');
 const express = require('express');
 const fs = require('fs');
@@ -15,11 +14,16 @@ const MAX_RECONNECT_ATTEMPTS = 3;
 
 async function startBot() {
   const { state, saveCreds } = await useMultiFileAuthState('session');
+  const { version } = await fetchLatestBaileysVersion();
 
   const sock = makeWASocket({
+    version,
     auth: state,
-    browser: ['MyBot', 'Chrome', '1.0.0'],
-    connectOptions: { maxRetries: 5 }
+    browser: ['Ubuntu', 'Chrome', '20.0.0'],
+    connectOptions: {
+      maxRetries: 5,
+      timeout: 60000
+    }
   });
 
   sock.ev.on('connection.update', (update) => {
@@ -45,7 +49,7 @@ async function startBot() {
           try { fs.rmSync('session', { recursive: true, force: true }); } catch (err) {}
           reconnectAttempts = 0;
         }
-        setTimeout(() => startBot(), 7000);
+        setTimeout(() => startBot(), 10000);
       } else {
         console.log('Logout terdeteksi. Hapus folder session jika ingin login ulang.');
         reconnectAttempts = 0;
