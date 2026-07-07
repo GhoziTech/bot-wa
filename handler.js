@@ -26,30 +26,39 @@ async function handleMessage(sock, msg) {
   else if (messageType === 'extendedTextMessage') text = msg.message.extendedTextMessage.text;
   else if (messageType === 'listResponseMessage') {
     const rowId = msg.message.listResponseMessage.singleSelectReply.selectedRowId;
+    console.log(`List response dari ${phone}: ${rowId}`);
     return await handleListAction(sock, from, phone, rowId);
   }
-  if (!text) return;
-  console.log(`Pesan ${phone}: ${text}`);
 
-  if (text.trim() === '#mulai') {
+  if (!text) return;
+
+  // Log untuk debug
+  console.log(`[${phone}] ${text}`);
+
+  // Ubah pemicu menjadi /mulai
+  if (text.trim() === '/mulai') {
     userStates.set(phone, { step: 'idle' });
     return await menu.sendMainMenu(sock, from);
   }
 
+  // Admin command
   if (phone === '6285727688928' && text.startsWith('/')) {
     const { handleAdminCommand } = require('./admin');
     return await handleAdminCommand(sock, msg);
   }
 
+  // State handling
   if (['order_confirm','order_payment','isi_saldo','topup_payment','settings_name','settings_email','settings_rekening'].includes(state.step)) {
     return await handleState(sock, from, phone, state, text.toLowerCase());
   }
 
+  // Teks yang menyerupai rowId
   const actions = ['profile','list_produk','kategori','stock','isi_saldo','order_history','customer_service','settings','kembali_menu','set_nama','set_email','set_rekening'];
   if (actions.includes(text) || text.startsWith('order_') || text.startsWith('lanjut_') || text.startsWith('kategori_')) {
     return await handleListAction(sock, from, phone, text);
   }
 
+  // Jika tidak dikenali, tampilkan menu utama
   await menu.sendMainMenu(sock, from);
 }
 
