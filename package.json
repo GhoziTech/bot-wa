@@ -1,15 +1,15 @@
 {
   "name": "wa-bot-final",
-  "version": "2.0.0",
-  "description": "Bot WhatsApp 24 jam dengan Baileys terbaru",
+  "version": "1.0.0",
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
     "seed": "node seed.js"
   },
   "dependencies": {
-    "@whiskeysockets/baileys": "^6.7.0",
+    "baileys": "6.7.22",
     "better-sqlite3": "^11.7.0",
-    "express": "^4.18.2"
+    "express": "^4.18.2",
+    "qrcode-terminal": "^0.12.0"
   }
 }
