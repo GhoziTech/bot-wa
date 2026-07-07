@@ -26,8 +26,8 @@ const products = [
   {name:'ALIGHT MOTION',description:'Ⓘ AKSES KE FITUR PREMIUM\nⒾ DURASI 1 TAHUN\nⒾ GARANSI 6 BULAN\nⒾ LOGIN VIA LINK EMAIL',category:'Editing',price:20000,rating:0.0,sold:0}
 ];
 
-const insert = db.prepare(`INSERT INTO products (name, description, category, price, rating, sold) VALUES (@name, @description, @category, @price, @rating, @sold)`);
+const insert = db.prepare('INSERT INTO products (name, description, category, price, rating, sold) VALUES (@name, @description, @category, @price, @rating, @sold)');
 const insertAll = db.transaction(() => { for (const p of products) insert.run(p); });
 insertAll();
-console.log('✅ 21 produk berhasil ditambahkan dengan harga baru (+10.000).');
+console.log('✅ 21 produk berhasil ditambahkan.');
 process.exit(0);
