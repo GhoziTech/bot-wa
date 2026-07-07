@@ -2,7 +2,6 @@ const db = require('./database');
 
 async function sendMainMenu(sock, to) {
   const sections = [{
-    title: '📌 Menu Utama',
     rows: [
       { title: '👤 Profile', rowId: 'profile', description: 'Lihat profil & saldo' },
       { title: '📦 List Produk', rowId: 'list_produk', description: 'Semua produk' },
@@ -11,9 +10,8 @@ async function sendMainMenu(sock, to) {
     ]
   }];
   await sock.sendMessage(to, {
-    text: '✨ Selamat datang di StoreBot!\nKetik #mulai untuk kembali.',
+    text: '✨ Selamat datang di StoreBot!\nKetik /mulai untuk kembali.',
     footer: 'Pilih menu:',
-    title: 'Menu Utama',
     buttonText: 'Pilih',
     sections
   });
@@ -34,7 +32,6 @@ async function sendProfile(sock, to) {
   await sock.sendMessage(to, {
     text,
     footer: 'Pilih aksi:',
-    title: 'Profile',
     buttonText: 'Pilih',
     sections: [{ rows }]
   });
@@ -61,7 +58,6 @@ async function sendProductList(sock, to, page = 1) {
   await sock.sendMessage(to, {
     text: desc,
     footer: 'Pilih produk untuk memesan',
-    title: 'List Produk',
     buttonText: 'Pilih Produk',
     sections: [{ title: 'Pilih Produk', rows }]
   });
@@ -71,7 +67,12 @@ async function sendStockList(sock, to) {
   const products = db.prepare(`SELECT p.name, (SELECT COUNT(*) FROM credentials WHERE product_id=p.id AND is_sold=0) AS stock FROM products p WHERE is_active=1`).all();
   let text = '📦 Daftar Stock Product\n\n';
   products.forEach(p => text += `${p.name} ➜ Stock ${p.stock}\n`);
-  await sock.sendMessage(to, { text });
+  const rows = [{ title: '🔙 Kembali Menu', rowId: 'kembali_menu', description: '' }];
+  await sock.sendMessage(to, {
+    text,
+    buttonText: 'Menu',
+    sections: [{ rows }]
+  });
 }
 
 async function sendCategoryList(sock, to) {
@@ -82,7 +83,6 @@ async function sendCategoryList(sock, to) {
   await sock.sendMessage(to, {
     text: '📂 Kategori Produk',
     footer: 'Pilih kategori',
-    title: 'Kategori',
     buttonText: 'Pilih',
     sections: [{ rows }]
   });
@@ -100,7 +100,6 @@ async function sendCategoryProducts(sock, to, category) {
   await sock.sendMessage(to, {
     text,
     footer: 'Pilih produk',
-    title: 'Produk',
     buttonText: 'Pilih',
     sections: [{ rows }]
   });
@@ -129,10 +128,19 @@ async function sendSettings(sock, to) {
   await sock.sendMessage(to, {
     text: '⚙️ Pengaturan Akun',
     footer: 'Pilih pengaturan',
-    title: 'Settings',
     buttonText: 'Pilih',
     sections: [{ rows }]
   });
 }
 
-module.exports = { sendMainMenu, sendProfile, sendProductList, sendStockList, sendCategoryList, sendCategoryProducts, sendOrderHistory, sendCustomerService, sendSettings };
+module.exports = {
+  sendMainMenu,
+  sendProfile,
+  sendProductList,
+  sendStockList,
+  sendCategoryList,
+  sendCategoryProducts,
+  sendOrderHistory,
+  sendCustomerService,
+  sendSettings
+};
