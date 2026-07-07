@@ -1,6 +1,19 @@
 const { Client, LocalAuth } = require('whatsapp-web.js');
 const qrcode = require('qrcode-terminal');
+const express = require('express');
 const handler = require('./handler');
+
+const app = express();
+const PORT = process.env.PORT || 3000;
+
+// HTTP health check (untuk UptimeRobot)
+app.get('/', (req, res) => {
+  res.send('Bot is running');
+});
+
+app.listen(PORT, () => {
+  console.log(`Health check server di port ${PORT}`);
+});
 
 const client = new Client({
     authStrategy: new LocalAuth({ dataPath: 'session' }),
