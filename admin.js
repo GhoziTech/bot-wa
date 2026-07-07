@@ -1,4 +1,5 @@
 const db = require('./database');
+
 async function handleAdminCommand(sock, msg) {
   const from = msg.key.remoteJid;
   const text = msg.message.conversation || msg.message.extendedTextMessage?.text;
@@ -19,7 +20,7 @@ async function handleAdminCommand(sock, msg) {
     db.prepare('UPDATE products SET sold=sold+1 WHERE id=?').run(order.product_id);
     const buyerJid = order.user_phone + '@s.whatsapp.net';
     const product = db.prepare('SELECT * FROM products WHERE id=?').get(order.product_id);
-    await sock.sendMessage(buyerJid, { text: `✅ Pesanan #${orderId} Selesai!\nProduk: ${product.name}\n📧 Email: ${cred.email}\n🔑 Password: ${cred.password}` });
+    await sock.sendMessage(buyerJid, { text: `✅ Pesanan #${orderId} Selesai!\nProduk: ${product.name}\n📧 Email: ${cred.email}\n🔑 Password: ${cred.password}\n\nTerima kasih telah berbelanja di GhoziTech!` });
     await sock.sendMessage(from, { text: `✅ Order #${orderId} terverifikasi & terkirim.` });
   } else if (cmd === 'topup') {
     const phone = args[1], amount = parseInt(args[2]);
@@ -32,6 +33,16 @@ async function handleAdminCommand(sock, msg) {
     if (!productId || !email || !password) return sock.sendMessage(from, { text: 'Format: /addcred <product_id> <email> <password>' });
     db.prepare('INSERT INTO credentials (product_id, email, password) VALUES (?,?,?)').run(productId, email, password);
     await sock.sendMessage(from, { text: '✅ Kredensial ditambahkan.' });
+  } else if (cmd === 'stock') {
+    const products = db.prepare(`SELECT p.id, p.name, (SELECT COUNT(*) FROM credentials WHERE product_id=p.id AND is_sold=0) AS stock FROM products p`).all();
+    let txt = '📦 Stok Produk GhoziTech:\n';
+    products.forEach(p => txt += `${p.id}. ${p.name} ➜ ${p.stock}\n`);
+    await sock.sendMessage(from, { text: txt });
+  } else if (cmd === 'addproduct') {
+    const name = args[1], price = parseInt(args[2]), category = args[3] || '', desc = args.slice(4).join(' ');
+    if (!name || !price) return sock.sendMessage(from, { text: 'Format: /addproduct <nama> <harga> <kategori> <deskripsi>' });
+    db.prepare('INSERT INTO products (name, price, category, description) VALUES (?,?,?,?)').run(name, price, category, desc);
+    await sock.sendMessage(from, { text: '✅ Produk ditambahkan.' });
   }
 }
 
