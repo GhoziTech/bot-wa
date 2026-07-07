@@ -102,9 +102,13 @@ async function startBot() {
   sock.ev.on('creds.update', saveCreds);
 
   sock.ev.on('messages.upsert', async ({ messages }) => {
-    if (!isOnline) return;
+  // Hapus pengecekan isOnline agar semua pesan diproses
     const msg = messages[0];
     if (!msg.message || msg.key.fromMe) return;
+  
+    // Log untuk memastikan pesan masuk terdeteksi
+    console.log(`[INCOMING] from ${msg.key.remoteJid}, type: ${Object.keys(msg.message)[0]}`);
+  
     try {
       await handler(sock, msg);
     } catch (err) {
