@@ -1,10 +1,15 @@
-const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion } = require('baileys');
 const express = require('express');
 const QRCode = require('qrcode');
 const fs = require('fs');
 const path = require('path');
 const handler = require('./handler');
 const { handleAdminCommand } = require('./admin');
+
+let baileysModulePromise;
+function loadBaileys() {
+  if (!baileysModulePromise) baileysModulePromise = import('baileys');
+  return baileysModulePromise;
+}
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -101,6 +106,13 @@ async function startBot() {
   starting = true;
 
   try {
+    const {
+      default: makeWASocket,
+      useMultiFileAuthState,
+      DisconnectReason,
+      fetchLatestBaileysVersion
+    } = await loadBaileys();
+
     const { state, saveCreds } = await useMultiFileAuthState(sessionDir);
     const { version } = await fetchLatestBaileysVersion();
 
@@ -173,6 +185,7 @@ async function startBot() {
             continue;
           }
 
+          console.log('[INCOMING KEY]', JSON.stringify({ remoteJid: msg.key.remoteJid, remoteJidAlt: msg.key.remoteJidAlt, participant: msg.key.participant, participantAlt: msg.key.participantAlt, addressingMode: msg.key.addressingMode }));
           console.log(`[INCOMING] from ${msg.key.remoteJid}, type: ${Object.keys(unwrapMessage(msg.message))[0]}`);
           await handler(sock, msg);
         } catch (error) {
