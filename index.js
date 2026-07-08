@@ -164,6 +164,25 @@ async function startBot() {
 
     sock.ev.on('creds.update', saveCreds);
 
+    // Tampilkan ACK/error outbound supaya kegagalan async seperti 463 tidak lagi
+    // terlihat seolah-olah relayMessage berhasil tanpa masalah.
+    sock.ev.on('messages.update', (updates) => {
+      for (const update of updates || []) {
+        const status = update.update?.status;
+        const stub = update.update?.messageStubParameters;
+        const stubType = update.update?.messageStubType;
+        if (status !== undefined || stub || stubType !== undefined) {
+          console.log('[MESSAGE UPDATE]', JSON.stringify({
+            id: update.key?.id,
+            remoteJid: update.key?.remoteJid,
+            status,
+            messageStubType: stubType,
+            messageStubParameters: stub
+          }));
+        }
+      }
+    });
+
     sock.ev.on('messages.upsert', async ({ messages, type }) => {
       if (!isOnline || type !== 'notify') return;
 
