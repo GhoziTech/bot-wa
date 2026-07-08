@@ -1,6 +1,6 @@
 {
   "name": "ghozitech-bot",
-  "version": "5.0.0",
+  "version": "1.0.0",
   "description": "Bot WhatsApp GhoziTech - 24 jam dengan Baileys",
   "main": "index.js",
   "scripts": {
