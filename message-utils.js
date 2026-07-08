@@ -90,9 +90,11 @@ async function relayNativeInteractive(sock, to, payload) {
     userJid: sock.user?.id || ''
   });
 
+  console.log(`[OUTBOUND INTERACTIVE] to=${to} id=${generated.key.id}`);
   await sock.relayMessage(to, generated.message, {
     messageId: generated.key.id
   });
+  console.log(`[OUTBOUND INTERACTIVE RELAYED] to=${to} id=${generated.key.id}`);
 
   return generated;
 }
