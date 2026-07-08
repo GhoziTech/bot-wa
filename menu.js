@@ -1,369 +1,419 @@
 const db = require('./database');
-const { sendQuickButtons, sendSingleSelect, truncate } = require('./message-utils');
 
 const STORE_NAME = process.env.STORE_NAME || 'GhoziTech';
-const OWNER_PHONE = process.env.OWNER_PHONE || '6285727688928';
 
-const SALAM = `✨ *YOOO, SELAMAT DATANG DI ${STORE_NAME.toUpperCase()}!* ✨\n\n` +
-  `Halo, bestie! 👋\n` +
-  `Udah siap belanja produk digital dengan proses yang praktis? 🔥\n\n` +
-  `Gunakan tombol yang tersedia. Pesan lain di luar tombol tidak akan dijawab bot.`;
-
-async function sendMainMenu(sock, to) {
-  // Kirim salam sebagai pesan teks biasa lebih dulu. Ini memastikan pengguna
-  // tetap melihat respons walaupun native-flow button sedang ditolak klien WA.
-  await sock.sendMessage(to, { text: SALAM });
-
-  return sendQuickButtons(sock, to, {
-    title: `${STORE_NAME} • Menu Utama`,
-    text: 'Silakan pilih salah satu tombol di bawah.',
-    footer: `${STORE_NAME} • #stop untuk menutup bot`,
-    buttons: [
-      { id: 'profile', text: '👤 Profil' },
-      { id: 'list_produk', text: '📦 Produk' },
-      { id: 'more_menu', text: '☰ Menu Lainnya' }
-    ]
-  });
+function money(value) {
+  return Number(value || 0).toLocaleString('id-ID');
 }
 
-async function sendMoreMenu(sock, to) {
-  return sendSingleSelect(sock, to, {
-    title: `${STORE_NAME} • Menu`,
-    text: 'Pilih layanan yang ingin dibuka.',
-    footer: `${STORE_NAME} • Gunakan pilihan resmi bot`,
-    buttonText: 'Buka Daftar Menu',
-    sections: [
-      {
-        title: 'Belanja',
-        rows: [
-          { id: 'list_produk', title: '📦 Semua Produk', description: 'Lihat seluruh katalog' },
-          { id: 'kategori', title: '📂 Kategori', description: 'Cari produk per kategori' },
-          { id: 'stock', title: '📊 Stok Produk', description: 'Lihat stok tersedia' },
-          { id: 'isi_saldo', title: '➕ Isi Saldo', description: 'Pilih nominal top up' }
-        ]
-      },
-      {
-        title: 'Akun & Bantuan',
-        rows: [
-          { id: 'profile', title: '👤 Profil', description: 'Lihat data akun' },
-          { id: 'order_history', title: '📜 Riwayat Order', description: 'Lihat pesanan terakhir' },
-          { id: 'settings', title: '⚙️ Pengaturan', description: 'Kelola akun melalui admin' },
-          { id: 'customer_service', title: '💬 Customer Service', description: 'Alihkan chat ke admin' },
-          { id: 'stop_bot', title: '⏹️ Tutup Bot', description: 'Kembali ke chat biasa' }
-        ]
-      }
-    ]
-  });
+function statusLabel(status) {
+  const labels = {
+    delivered: '✅ Selesai',
+    paid: '💰 Dibayar',
+    pending: '⏳ Menunggu',
+    cancelled: '❌ Dibatalkan'
+  };
+  return labels[status] || status;
 }
 
-async function sendProfile(sock, to, phone) {
-  const user = db.prepare('SELECT * FROM users WHERE phone = ?').get(phone);
+async function sendText(sock, to, text) {
+  const result = await sock.sendMessage(to, { text });
+  console.log(`[OUT] text to=${to} id=${result?.key?.id || '-'}`);
+  return result;
+}
+
+async function sendMainMenu(sock, to, name = '') {
+  const greetingName = name ? `, *${name}*` : '';
+  return sendText(sock, to,
+`✨ *YOOO, SELAMAT DATANG DI ${STORE_NAME.toUpperCase()}!* ✨
+
+Halo${greetingName}! 👋
+Udah siap belanja produk digital dengan proses yang praktis, cepat, dan anti ribet? 🔥
+
+Silakan balas menggunakan *nomor pilihan* di bawah. Pesan selain pilihan yang tersedia tidak akan dijawab bot.
+
+*MENU UTAMA*
+1. 👤 Profile
+2. 📦 Semua Produk
+3. 📂 Kategori Produk
+4. 📊 Stock Product
+5. ➕ Isi Saldo
+6. 📜 Order History
+7. 🔥 Top Order
+8. ⚙️ Settings Account
+9. 💬 Customer Service
+0. ⏹️ Tutup Bot
+
+_Ketik hanya angkanya, contoh: 1_`);
+}
+
+async function sendProfile(sock, to, userKey) {
+  const user = db.prepare('SELECT * FROM users WHERE phone=?').get(userKey);
   if (!user) return;
 
-  const text = `👤 *PROFIL AKUN*\n\n` +
-    `Nama: ${user.name || '-'}\n` +
-    `📞 Phone/ID: ${user.phone}\n` +
-    `📩 Email: ${user.email || '-'}\n` +
-    `💰 Saldo: Rp ${Number(user.saldo || 0).toLocaleString('id-ID')}\n` +
-    `🔢 Total Order: ${user.total_order || 0}\n` +
-    `🧾 Total Pengeluaran: Rp ${Number(user.total_pengeluaran || 0).toLocaleString('id-ID')}\n` +
-    `💳 No. Rekening: ${user.no_rekening || '-'}`;
+  return sendText(sock, to,
+`👤 *PROFILE ACCOUNT*
 
-  return sendQuickButtons(sock, to, {
-    title: `${STORE_NAME} • Profil`,
-    text,
-    footer: 'Pilih tindakan berikutnya',
-    buttons: [
-      { id: 'isi_saldo', text: '➕ Isi Saldo' },
-      { id: 'order_history', text: '📜 Riwayat' },
-      { id: 'more_menu', text: '☰ Menu' }
-    ]
-  });
+Nama: ${user.name || '-'}
+📞 Phone/ID: ${user.phone}
+📩 Email: ${user.email || '-'}
+💰 Saldo: Rp ${money(user.saldo)}
+🔢 Total Order: ${user.total_order || 0}
+🧾 Total Pengeluaran: Rp ${money(user.total_pengeluaran)}
+💳 Nomor Rekening: ${user.no_rekening || '-'}
+
+*PILIHAN PROFILE*
+1. ➕ Isi Saldo
+2. 📜 Order History
+3. ⚙️ Settings Account
+4. 📦 Semua Produk
+9. 💬 Customer Service
+0. 🏠 Menu Utama`);
 }
 
-async function sendProductList(sock, to, page = 1) {
+function getProductsPage(page = 1, category = null) {
   const perPage = 5;
-  const safePage = Number.isFinite(page) && page > 0 ? page : 1;
+  const safePage = Math.max(1, Number(page) || 1);
+  const offset = (safePage - 1) * perPage;
+  const filter = category ? 'AND p.category=?' : '';
+  const params = category ? [category, perPage, offset] : [perPage, offset];
+  const countParams = category ? [category] : [];
+
+  const products = db.prepare(`
+    SELECT p.*,
+      (SELECT COUNT(*) FROM credentials c WHERE c.product_id=p.id AND c.is_sold=0) AS stock
+    FROM products p
+    WHERE p.is_active=1 ${filter}
+    ORDER BY p.id
+    LIMIT ? OFFSET ?
+  `).all(...params);
+
+  const total = db.prepare(`
+    SELECT COUNT(*) AS cnt FROM products p
+    WHERE p.is_active=1 ${category ? 'AND p.category=?' : ''}
+  `).get(...countParams).cnt;
+
+  return {
+    products,
+    page: safePage,
+    totalPages: Math.max(1, Math.ceil(total / perPage)),
+    offset
+  };
+}
+
+async function sendProductList(sock, to, page = 1, category = null) {
+  const data = getProductsPage(page, category);
+  if (!data.products.length && data.page > 1) {
+    return sendProductList(sock, to, data.totalPages, category);
+  }
+
+  const title = category ? `KATEGORI: ${category}` : 'SEMUA PRODUK';
+  let text = `📦 *${title} (${data.page}/${data.totalPages})*\n\n`;
+
+  if (!data.products.length) {
+    text += 'Belum ada produk aktif pada daftar ini.\n\n';
+  }
+
+  data.products.forEach((product, index) => {
+    const number = index + 1;
+    const fire = Number(product.sold) >= 20 ? ' 🔥' : '';
+    text += `${number}. *${product.name}*${fire}\n`;
+    text += `   ➜ Stock: ${product.stock}\n`;
+    text += `   ➜ Rating: ${Number(product.rating || 0).toFixed(1)} ⭐\n`;
+    text += `   ➜ Terjual: ${product.sold || 0} pcs\n`;
+    text += `   ➜ Harga: Rp ${money(product.price)}\n`;
+    if (product.description) text += `${product.description}\n`;
+    text += '\n';
+  });
+
+  text += '*PILIHAN*\n';
+  if (data.products.length) text += '1–5. Pilih produk sesuai nomor di atas\n';
+  if (data.page < data.totalPages) text += '6. ➡️ Halaman Berikutnya\n';
+  if (data.page > 1) text += '7. ⬅️ Halaman Sebelumnya\n';
+  text += category ? '8. 📂 Kembali ke Kategori\n' : '8. 📊 Lihat Stock\n';
+  text += category ? '9. 📦 Semua Produk\n' : '9. 📂 Kategori Produk\n';
+  text += '0. 🏠 Menu Utama';
+
+  await sendText(sock, to, text);
+  return data;
+}
+
+async function sendProductDetail(sock, to, productId) {
+  const product = db.prepare(`
+    SELECT p.*,
+      (SELECT COUNT(*) FROM credentials c WHERE c.product_id=p.id AND c.is_sold=0) AS stock
+    FROM products p WHERE p.id=? AND p.is_active=1
+  `).get(productId);
+
+  if (!product) return null;
+
+  await sendText(sock, to,
+`🛍️ *DETAIL PRODUK*
+
+📦 Produk: *${product.name}*
+📂 Kategori: ${product.category || '-'}
+💰 Harga: Rp ${money(product.price)}
+📊 Stock: ${product.stock}
+⭐ Rating: ${Number(product.rating || 0).toFixed(1)}
+🛒 Terjual: ${product.sold || 0} pcs
+
+${product.description || 'Tidak ada deskripsi tambahan.'}
+
+*PILIHAN*
+1. 🛒 Beli Sekarang
+2. 📦 Kembali ke Daftar Produk
+9. 💬 Customer Service
+0. 🏠 Menu Utama`);
+
+  return product;
+}
+
+async function sendOrderConfirmation(sock, to, product, stock) {
+  return sendText(sock, to,
+`🧾 *KONFIRMASI ORDER*
+
+Produk: *${product.name}*
+Harga: Rp ${money(product.price)}
+Stock tersedia: ${stock}
+
+Pastikan produk dan ketentuannya sudah sesuai sebelum melanjutkan.
+
+*PILIHAN*
+1. ✅ Lanjut ke Pembayaran
+2. ❌ Batalkan
+0. 🏠 Menu Utama`);
+}
+
+async function sendPaymentMenu(sock, to, type, data) {
+  const isOrder = type === 'order';
+  return sendText(sock, to,
+`💳 *${isOrder ? 'PEMBAYARAN ORDER' : 'TOP UP SALDO'}*
+
+${isOrder ? `Order: #${data.orderId}\nProduk: ${data.productName}\n` : ''}Total: *Rp ${money(data.amount)}*
+
+Scan QRIS yang dikirim di atas. Setelah pembayaran selesai, pilih jawaban berikut.
+
+*PILIHAN*
+1. ✅ Sudah Bayar
+2. ❌ Batalkan
+9. 💬 Customer Service
+0. 🏠 Menu Utama`);
+}
+
+async function sendTopupMenu(sock, to) {
+  return sendText(sock, to,
+`➕ *ISI SALDO*
+
+Pilih nominal top up:
+
+1. Rp 10.000
+2. Rp 20.000
+3. Rp 50.000
+4. Rp 100.000
+5. Rp 200.000
+6. Rp 500.000
+0. 🏠 Menu Utama
+
+_Balas menggunakan nomor pilihan._`);
+}
+
+async function sendCategoryList(sock, to, page = 1) {
+  const perPage = 7;
+  const total = db.prepare(`
+    SELECT COUNT(DISTINCT category) AS cnt
+    FROM products
+    WHERE is_active=1 AND category IS NOT NULL AND TRIM(category)<>''
+  `).get().cnt;
+  const totalPages = Math.max(1, Math.ceil(total / perPage));
+  const safePage = Math.min(totalPages, Math.max(1, Number(page) || 1));
+  const offset = (safePage - 1) * perPage;
+  const categories = db.prepare(`
+    SELECT category, COUNT(*) AS total
+    FROM products
+    WHERE is_active=1 AND category IS NOT NULL AND TRIM(category)<>''
+    GROUP BY category
+    ORDER BY category
+    LIMIT ? OFFSET ?
+  `).all(perPage, offset);
+
+  let text = `📂 *KATEGORI PRODUK (${safePage}/${totalPages})*\n\n`;
+  if (!categories.length) text += 'Belum ada kategori produk aktif.\n';
+  categories.forEach((category, index) => {
+    text += `${index + 1}. ${category.category} (${category.total} produk)\n`;
+  });
+
+  text += '\n*PILIHAN*\n';
+  if (categories.length) text += '1–7. Pilih kategori sesuai nomor\n';
+  if (safePage < totalPages) text += '8. ➡️ Halaman Berikutnya\n';
+  if (safePage > 1) text += '9. ⬅️ Halaman Sebelumnya\n';
+  text += '0. 🏠 Menu Utama';
+
+  await sendText(sock, to, text);
+  return { categories, page: safePage, totalPages };
+}
+
+async function sendStockList(sock, to, page = 1) {
+  const perPage = 10;
+  const safePage = Math.max(1, Number(page) || 1);
   const offset = (safePage - 1) * perPage;
   const products = db.prepare(`
-    SELECT p.*, (SELECT COUNT(*) FROM credentials WHERE product_id=p.id AND is_sold=0) AS stock
-    FROM products p WHERE p.is_active=1 ORDER BY p.id LIMIT ? OFFSET ?
+    SELECT p.name,
+      (SELECT COUNT(*) FROM credentials c WHERE c.product_id=p.id AND c.is_sold=0) AS stock
+    FROM products p
+    WHERE p.is_active=1
+    ORDER BY p.id
+    LIMIT ? OFFSET ?
   `).all(perPage, offset);
   const total = db.prepare('SELECT COUNT(*) AS cnt FROM products WHERE is_active=1').get().cnt;
   const totalPages = Math.max(1, Math.ceil(total / perPage));
 
-  if (!products.length && safePage > 1) return sendProductList(sock, to, totalPages);
-
-  let text = `📦 *DAFTAR PRODUK (${safePage}/${totalPages})*\n\n`;
-  const rows = [];
-
+  let text = `📊 *DAFTAR STOCK PRODUCT (${safePage}/${totalPages})*\n\n`;
+  if (!products.length) text += 'Belum ada produk aktif.\n';
   products.forEach((product, index) => {
-    const number = offset + index + 1;
-    const fire = product.sold > 20 ? ' 🔥' : '';
-    text += `${number}. *${product.name}*${fire}\n` +
-      `   ➜ Stok: ${product.stock}\n` +
-      `   ➜ Rating: ${product.rating} ⭐\n` +
-      `   ➜ Terjual: ${product.sold} pcs\n` +
-      `   ➜ Harga: Rp ${Number(product.price).toLocaleString('id-ID')}\n` +
-      `${product.description || ''}\n\n`;
-
-    rows.push({
-      id: `order_${product.id}`,
-      title: truncate(`${number}. ${product.name}`, 24),
-      description: `Rp ${Number(product.price).toLocaleString('id-ID')} • Stok ${product.stock}`
-    });
+    text += `${offset + index + 1}. ${product.name} ➜ Stock ${product.stock}\n`;
   });
 
-  if (safePage < totalPages) {
-    rows.push({ id: `lanjut_${safePage + 1}`, title: '➡️ Halaman Berikut', description: `Halaman ${safePage + 1}` });
-  }
-  if (safePage > 1) {
-    rows.push({ id: `lanjut_${safePage - 1}`, title: '⬅️ Halaman Sebelum', description: `Halaman ${safePage - 1}` });
-  }
-  rows.push({ id: 'stock', title: '📊 Cek Stok', description: 'Lihat stok semua produk' });
-  rows.push({ id: 'more_menu', title: '☰ Menu Lainnya', description: 'Kembali ke menu' });
+  text += '\n*PILIHAN*\n';
+  if (safePage < totalPages) text += '1. ➡️ Halaman Berikutnya\n';
+  if (safePage > 1) text += '2. ⬅️ Halaman Sebelumnya\n';
+  text += '3. 📦 Semua Produk\n';
+  text += '4. 📂 Kategori Produk\n';
+  text += '0. 🏠 Menu Utama';
 
-  return sendSingleSelect(sock, to, {
-    title: `${STORE_NAME} • Produk`,
-    text,
-    footer: 'Pilih produk dari daftar',
-    buttonText: 'Pilih Produk',
-    sections: [{ title: 'Produk', rows }]
-  });
+  await sendText(sock, to, text);
+  return { page: safePage, totalPages };
 }
 
-async function sendCategoryList(sock, to) {
-  const categories = db.prepare(`
-    SELECT DISTINCT category FROM products
-    WHERE is_active=1 AND category IS NOT NULL AND TRIM(category) <> ''
-    ORDER BY category
-  `).all().map((row) => row.category);
-
-  if (!categories.length) {
-    return sendQuickButtons(sock, to, {
-      title: `${STORE_NAME} • Kategori`,
-      text: 'Belum ada kategori produk.',
-      footer: STORE_NAME,
-      buttons: [
-        { id: 'list_produk', text: '📦 Produk' },
-        { id: 'more_menu', text: '☰ Menu' }
-      ]
-    });
-  }
-
-  const rows = categories.slice(0, 9).map((category) => ({
-    id: `kategori_${encodeURIComponent(category)}`,
-    title: truncate(category, 24),
-    description: 'Lihat produk kategori ini'
-  }));
-  rows.push({ id: 'more_menu', title: '☰ Menu Lainnya', description: 'Kembali ke menu' });
-
-  return sendSingleSelect(sock, to, {
-    title: `${STORE_NAME} • Kategori`,
-    text: '📂 *PILIH KATEGORI PRODUK*',
-    footer: STORE_NAME,
-    buttonText: 'Pilih Kategori',
-    sections: [{ title: 'Kategori', rows }]
-  });
-}
-
-async function sendCategoryProducts(sock, to, category) {
-  const products = db.prepare(`
-    SELECT p.*, (SELECT COUNT(*) FROM credentials WHERE product_id=p.id AND is_sold=0) AS stock
-    FROM products p WHERE category=? AND is_active=1 ORDER BY p.id LIMIT 8
-  `).all(category);
-
-  if (!products.length) {
-    return sendQuickButtons(sock, to, {
-      title: `${STORE_NAME} • Kategori`,
-      text: 'Tidak ada produk dalam kategori ini.',
-      footer: STORE_NAME,
-      buttons: [
-        { id: 'kategori', text: '📂 Kategori' },
-        { id: 'more_menu', text: '☰ Menu' }
-      ]
-    });
-  }
-
-  let text = `📂 *${category}*\n\n`;
-  const rows = products.map((product) => {
-    text += `${product.name} — Rp ${Number(product.price).toLocaleString('id-ID')} • Stok ${product.stock}\n`;
-    return {
-      id: `order_${product.id}`,
-      title: truncate(product.name, 24),
-      description: `Rp ${Number(product.price).toLocaleString('id-ID')} • Stok ${product.stock}`
-    };
-  });
-  rows.push({ id: 'kategori', title: '📂 Daftar Kategori', description: 'Pilih kategori lain' });
-  rows.push({ id: 'more_menu', title: '☰ Menu Lainnya', description: 'Kembali ke menu' });
-
-  return sendSingleSelect(sock, to, {
-    title: truncate(`${STORE_NAME} • ${category}`, 60),
-    text,
-    footer: 'Pilih produk untuk order',
-    buttonText: 'Pilih Produk',
-    sections: [{ title: 'Produk', rows }]
-  });
-}
-
-async function sendStockList(sock, to) {
-  const products = db.prepare(`
-    SELECT p.name,
-      (SELECT COUNT(*) FROM credentials WHERE product_id=p.id AND is_sold=0) AS stock
-    FROM products p WHERE p.is_active=1 ORDER BY stock DESC, p.name ASC
-  `).all();
-
-  let text = '📦 *DAFTAR STOK PRODUK*\n\n';
-  products.forEach((product, index) => {
-    text += `${index + 1}. ${product.name} ➜ Stok ${product.stock}\n`;
-  });
-
-  return sendQuickButtons(sock, to, {
-    title: `${STORE_NAME} • Stok`,
-    text,
-    footer: 'Stok diperbarui berdasarkan database',
-    buttons: [
-      { id: 'list_produk', text: '📦 Produk' },
-      { id: 'isi_saldo', text: '➕ Isi Saldo' },
-      { id: 'more_menu', text: '☰ Menu' }
-    ]
-  });
-}
-
-async function sendTopupAmounts(sock, to) {
-  const amounts = [10000, 20000, 50000, 100000, 200000, 500000];
-  const rows = amounts.map((amount) => ({
-    id: `topup_amount_${amount}`,
-    title: `Rp ${amount.toLocaleString('id-ID')}`,
-    description: `Top up saldo Rp ${amount.toLocaleString('id-ID')}`
-  }));
-  rows.push({ id: 'more_menu', title: '☰ Menu Lainnya', description: 'Batalkan top up' });
-
-  return sendSingleSelect(sock, to, {
-    title: `${STORE_NAME} • Isi Saldo`,
-    text: '💰 Pilih nominal top up yang tersedia.',
-    footer: 'Nominal khusus dapat diminta melalui Customer Service',
-    buttonText: 'Pilih Nominal',
-    sections: [{ title: 'Nominal Top Up', rows }]
-  });
-}
-
-async function sendOrderHistory(sock, to, phone) {
+async function sendOrderHistory(sock, to, userKey) {
   const orders = db.prepare(`
     SELECT o.id, p.name, o.amount, o.status, o.created_at
-    FROM orders o JOIN products p ON o.product_id=p.id
-    WHERE o.user_phone=? ORDER BY o.id DESC LIMIT 10
-  `).all(phone);
+    FROM orders o
+    JOIN products p ON p.id=o.product_id
+    WHERE o.user_phone=?
+    ORDER BY o.id DESC
+    LIMIT 10
+  `).all(userKey);
 
-  let text = '📜 *RIWAYAT ORDER*\n\n';
+  let text = '📜 *ORDER HISTORY*\n\n';
   if (!orders.length) {
-    text += 'Belum ada pesanan.';
+    text += 'Belum ada riwayat order pada akun ini.\n';
   } else {
     orders.forEach((order) => {
-      const icon = order.status === 'delivered' ? '✅' : order.status === 'cancelled' ? '❌' : '⏳';
-      text += `#${order.id} • ${order.name}\nRp ${Number(order.amount).toLocaleString('id-ID')} • ${icon} ${order.status}\n\n`;
+      text += `#${order.id} • ${order.name}\n`;
+      text += `Rp ${money(order.amount)} • ${statusLabel(order.status)}\n`;
+      text += `${order.created_at}\n\n`;
     });
   }
 
-  return sendQuickButtons(sock, to, {
-    title: `${STORE_NAME} • Riwayat`,
-    text,
-    footer: 'Maksimal 10 order terakhir',
-    buttons: [
-      { id: 'list_produk', text: '📦 Produk' },
-      { id: 'profile', text: '👤 Profil' },
-      { id: 'more_menu', text: '☰ Menu' }
-    ]
+  text += '*PILIHAN*\n';
+  text += '1. 📦 Semua Produk\n';
+  text += '2. ➕ Isi Saldo\n';
+  text += '9. 💬 Customer Service\n';
+  text += '0. 🏠 Menu Utama';
+
+  return sendText(sock, to, text);
+}
+
+async function sendTopOrder(sock, to) {
+  const products = db.prepare(`
+    SELECT p.*,
+      (SELECT COUNT(*) FROM credentials c WHERE c.product_id=p.id AND c.is_sold=0) AS stock
+    FROM products p
+    WHERE p.is_active=1
+    ORDER BY p.sold DESC, p.rating DESC
+    LIMIT 5
+  `).all();
+
+  let text = '🔥 *TOP ORDER GHOTZITECH*\n\n';
+  if (!products.length) text += 'Belum ada produk aktif.\n';
+  products.forEach((product, index) => {
+    text += `${index + 1}. *${product.name}*\n`;
+    text += `   Terjual ${product.sold || 0} • Stock ${product.stock} • Rp ${money(product.price)}\n\n`;
   });
+  text += '*PILIHAN*\n';
+  if (products.length) text += '1–5. Pilih produk sesuai nomor\n';
+  text += '8. 📦 Semua Produk\n';
+  text += '9. 📂 Kategori Produk\n';
+  text += '0. 🏠 Menu Utama';
+  await sendText(sock, to, text);
+  return { products };
 }
 
 async function sendSettings(sock, to) {
-  return sendQuickButtons(sock, to, {
-    title: `${STORE_NAME} • Pengaturan`,
-    text: '⚙️ Perubahan nama, email, atau rekening dilakukan melalui Customer Service agar tidak ada input bebas yang diproses bot.',
-    footer: 'Pilih tindakan berikutnya',
-    buttons: [
-      { id: 'customer_service', text: '💬 Hubungi CS' },
-      { id: 'profile', text: '👤 Profil' },
-      { id: 'more_menu', text: '☰ Menu' }
-    ]
-  });
+  return sendText(sock, to,
+`⚙️ *SETTINGS ACCOUNT*
+
+Untuk menjaga keamanan, perubahan nama, email, dan rekening dilakukan melalui Customer Service agar dapat diverifikasi oleh admin.
+
+*PILIHAN*
+1. 👤 Lihat Profile
+2. ✏️ Ubah Data melalui CS
+3. 🔐 Informasi Keamanan
+0. 🏠 Menu Utama`);
 }
 
-async function sendOrderConfirmation(sock, to, product, stock) {
-  return sendQuickButtons(sock, to, {
-    title: `${STORE_NAME} • Konfirmasi`,
-    text: `🛒 *KONFIRMASI ORDER*\n\nProduk: ${product.name}\nHarga: Rp ${Number(product.price).toLocaleString('id-ID')}\nStok: ${stock}\n\nLanjutkan ke pembayaran?`,
-    footer: 'Periksa produk sebelum membayar',
-    buttons: [
-      { id: 'confirm_order', text: '✅ Lanjut Bayar' },
-      { id: 'cancel_order', text: '❌ Batalkan' },
-      { id: 'more_menu', text: '☰ Menu' }
-    ]
-  });
+async function sendSecurityInfo(sock, to) {
+  return sendText(sock, to,
+`🔐 *INFORMASI KEAMANAN*
+
+• Admin tidak pernah meminta OTP, PIN, atau kode verifikasi WhatsApp.
+• Jangan membagikan password pribadi di luar kebutuhan produk yang sah.
+• Simpan nomor order untuk proses bantuan dan garansi.
+• Pastikan pembayaran hanya melalui instruksi resmi bot/admin.
+
+*PILIHAN*
+1. ⚙️ Kembali ke Settings
+9. 💬 Customer Service
+0. 🏠 Menu Utama`);
 }
 
-async function sendPaymentActions(sock, to, kind = 'order') {
-  return sendQuickButtons(sock, to, {
-    title: `${STORE_NAME} • Pembayaran`,
-    text: 'Setelah pembayaran selesai, tekan tombol *Sudah Bayar*. Pembayaran tetap menunggu verifikasi admin.',
-    footer: 'Jangan kirim OTP, PIN, atau password',
-    buttons: [
-      { id: kind === 'topup' ? 'topup_paid' : 'order_paid', text: '✅ Sudah Bayar' },
-      { id: 'cancel_payment', text: '❌ Batalkan' },
-      { id: 'customer_service', text: '💬 CS' }
-    ]
-  });
-}
+async function sendSubmissionReceived(sock, to, type) {
+  return sendText(sock, to,
+`✅ *${type === 'order' ? 'KONFIRMASI PEMBAYARAN DITERIMA' : 'PERMINTAAN TOP UP DITERIMA'}*
 
-async function sendSubmissionReceived(sock, to, kind = 'order') {
-  return sendQuickButtons(sock, to, {
-    title: `${STORE_NAME} • Diproses`,
-    text: kind === 'topup'
-      ? '✅ Permintaan top up sudah diteruskan kepada admin untuk diverifikasi.'
-      : '✅ Konfirmasi pembayaran sudah diteruskan kepada admin. Pesanan menunggu verifikasi.',
-    footer: STORE_NAME,
-    buttons: [
-      { id: 'order_history', text: '📜 Riwayat' },
-      { id: 'list_produk', text: '📦 Produk' },
-      { id: 'more_menu', text: '☰ Menu' }
-    ]
-  });
-}
+Data sudah diteruskan kepada admin untuk diperiksa. Mohon tunggu proses verifikasi.
 
-async function sendErrorActions(sock, to, message) {
-  return sendQuickButtons(sock, to, {
-    title: `${STORE_NAME} • Informasi`,
-    text: message,
-    footer: STORE_NAME,
-    buttons: [
-      { id: 'list_produk', text: '📦 Produk' },
-      { id: 'customer_service', text: '💬 CS' },
-      { id: 'more_menu', text: '☰ Menu' }
-    ]
-  });
+*PILIHAN*
+1. 🏠 Menu Utama
+2. 📜 Order History
+9. 💬 Customer Service
+0. ⏹️ Tutup Bot`);
 }
 
 async function sendCustomerService(sock, to) {
-  return sock.sendMessage(to, {
-    text: `💬 *CUSTOMER SERVICE*\n\nBot telah dinonaktifkan untuk chat ini. Silakan tulis kebutuhanmu dan admin akan membalas secara manual.\n\nUntuk membuka bot kembali, kirim *#mulai*.\nAdmin: wa.me/${OWNER_PHONE}`
-  });
+  return sendText(sock, to,
+`💬 *CUSTOMER SERVICE ${STORE_NAME.toUpperCase()}*
+
+Bot sudah dinonaktifkan untuk percakapan ini. Silakan tulis kebutuhan Anda secara normal; admin akan membalas langsung melalui WhatsApp Business.
+
+Untuk membuka bot kembali, kirim *#mulai* atau */mulai*.`);
+}
+
+async function sendStopped(sock, to) {
+  return sendText(sock, to,
+`⏹️ *BOT DINONAKTIFKAN*
+
+Pesan biasa tidak akan dijawab bot. Admin tetap dapat membalas percakapan secara manual.
+
+Kirim *#mulai* atau */mulai* untuk membuka menu kembali.`);
 }
 
 module.exports = {
+  sendText,
   sendMainMenu,
-  sendMoreMenu,
   sendProfile,
   sendProductList,
-  sendCategoryList,
-  sendCategoryProducts,
-  sendStockList,
-  sendTopupAmounts,
-  sendOrderHistory,
-  sendSettings,
+  sendProductDetail,
   sendOrderConfirmation,
-  sendPaymentActions,
+  sendPaymentMenu,
+  sendTopupMenu,
+  sendCategoryList,
+  sendStockList,
+  sendOrderHistory,
+  sendTopOrder,
+  sendSettings,
+  sendSecurityInfo,
   sendSubmissionReceived,
-  sendErrorActions,
-  sendCustomerService
+  sendCustomerService,
+  sendStopped
 };
