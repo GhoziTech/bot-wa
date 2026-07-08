@@ -1,14 +1,12 @@
 {
   "name": "ghozitech-bot",
-  "version": "2.0.0",
-  "description": "GhoziTech WhatsApp bot dengan menu angka, Baileys v7, dan routing LID",
+  "version": "2.3.0",
+  "description": "GhoziTech WhatsApp bot - number menu, stock otomatis, admin panel angka",
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
-    "seed": "node seed.js"
-  },
-  "engines": {
-    "node": ">=20.0.0"
+    "seed": "node seed.js",
+    "check": "node --check index.js && node --check handler.js && node --check admin.js && node --check menu.js && node --check inventory.js"
   },
   "dependencies": {
     "@hapi/boom": "^10.0.1",
