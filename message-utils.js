@@ -1,66 +1,134 @@
+let baileysPromise;
+
+function loadBaileys() {
+  if (!baileysPromise) baileysPromise = import('baileys');
+  return baileysPromise;
+}
+
 function truncate(value, max) {
   const text = String(value ?? '');
   return text.length <= max ? text : `${text.slice(0, Math.max(0, max - 1))}…`;
 }
 
-function listFallback({ title, text, footer, sections }) {
-  const rows = sections.flatMap((section) => section.rows || []);
-  const options = rows
-    .map((row, index) => `${index + 1}. ${row.title}${row.description ? `\n   ${row.description}` : ''}\n   Ketik: ${row.rowId}`)
-    .join('\n');
-
-  return [`*${title}*`, text, options, footer].filter(Boolean).join('\n\n');
-}
-
-async function sendList(sock, to, payload) {
-  const sections = (payload.sections || []).map((section) => ({
-    title: truncate(section.title, 24),
-    rows: (section.rows || []).map((row) => ({
-      title: truncate(row.title, 24),
-      rowId: String(row.rowId),
-      description: truncate(row.description || '', 72)
-    }))
+function normalizeQuickButtons(buttons = []) {
+  return buttons.slice(0, 3).map((button) => ({
+    name: 'quick_reply',
+    buttonParamsJson: JSON.stringify({
+      display_text: truncate(button.text, 20),
+      id: String(button.id)
+    })
   }));
-
-  try {
-    return await sock.sendMessage(to, {
-      title: truncate(payload.title || 'Menu', 60),
-      text: payload.text || '',
-      footer: truncate(payload.footer || '', 60),
-      buttonText: truncate(payload.buttonText || 'Buka Menu', 20),
-      sections
-    });
-  } catch (error) {
-    console.error('[INTERACTIVE LIST FALLBACK]', error?.message || error);
-    return sock.sendMessage(to, {
-      text: listFallback({ ...payload, sections })
-    });
-  }
 }
 
-async function sendButtons(sock, to, payload) {
-  const buttons = (payload.buttons || []).slice(0, 3).map((button) => ({
-    buttonId: String(button.id),
-    buttonText: { displayText: truncate(button.text, 20) },
-    type: 1
-  }));
+function normalizeSections(sections = []) {
+  let remaining = 10;
+  const result = [];
 
-  try {
-    return await sock.sendMessage(to, {
-      text: payload.text || '',
-      footer: truncate(payload.footer || '', 60),
-      buttons,
-      headerType: 1
-    });
-  } catch (error) {
-    console.error('[QUICK BUTTON FALLBACK]', error?.message || error);
-    const fallback = buttons
-      .map((button, index) => `${index + 1}. ${button.buttonText.displayText} — ketik: ${button.buttonId}`)
-      .join('\n');
-    return sock.sendMessage(to, {
-      text: [payload.text, fallback, payload.footer].filter(Boolean).join('\n\n')
-    });
+  for (const section of sections) {
+    if (remaining <= 0) break;
+    const rows = [];
+
+    for (const row of section.rows || []) {
+      if (remaining <= 0) break;
+      rows.push({
+        id: String(row.id ?? row.rowId),
+        title: truncate(row.title, 24),
+        description: truncate(row.description || '', 72),
+        ...(row.header ? { header: truncate(row.header, 24) } : {})
+      });
+      remaining -= 1;
+    }
+
+    if (rows.length) {
+      result.push({
+        title: truncate(section.title || 'Pilihan', 24),
+        rows
+      });
+    }
   }
+
+  return result;
 }
 
-module.exports = { sendList, sendButtons, truncate };
+async function relayNativeInteractive(sock, to, payload) {
+  const { proto, generateWAMessageFromContent } = await loadBaileys();
+  const nativeButtons = payload.nativeButtons || [];
+
+  if (!to || !nativeButtons.length) {
+    throw new Error('Tujuan dan tombol interaktif wajib tersedia.');
+  }
+
+  const content = {
+    viewOnceMessage: {
+      message: {
+        messageContextInfo: {
+          deviceListMetadata: {},
+          deviceListMetadataVersion: 2
+        },
+        interactiveMessage: proto.Message.InteractiveMessage.create({
+          header: proto.Message.InteractiveMessage.Header.create({
+            title: truncate(payload.title || '', 60),
+            subtitle: '',
+            hasMediaAttachment: false
+          }),
+          body: proto.Message.InteractiveMessage.Body.create({
+            text: payload.text || ''
+          }),
+          footer: proto.Message.InteractiveMessage.Footer.create({
+            text: truncate(payload.footer || '', 60)
+          }),
+          nativeFlowMessage: proto.Message.InteractiveMessage.NativeFlowMessage.create({
+            buttons: nativeButtons,
+            messageParamsJson: '{}'
+          })
+        })
+      }
+    }
+  };
+
+  const generated = generateWAMessageFromContent(to, content, {
+    userJid: sock.user?.id || ''
+  });
+
+  await sock.relayMessage(to, generated.message, {
+    messageId: generated.key.id
+  });
+
+  return generated;
+}
+
+async function sendQuickButtons(sock, to, payload) {
+  return relayNativeInteractive(sock, to, {
+    title: payload.title,
+    text: payload.text,
+    footer: payload.footer,
+    nativeButtons: normalizeQuickButtons(payload.buttons)
+  });
+}
+
+async function sendSingleSelect(sock, to, payload) {
+  const sections = normalizeSections(payload.sections);
+  const nativeButtons = [
+    {
+      name: 'single_select',
+      buttonParamsJson: JSON.stringify({
+        title: truncate(payload.buttonText || 'Pilih Menu', 20),
+        sections
+      })
+    },
+    ...normalizeQuickButtons(payload.quickButtons || [])
+  ];
+
+  return relayNativeInteractive(sock, to, {
+    title: payload.title,
+    text: payload.text,
+    footer: payload.footer,
+    nativeButtons
+  });
+}
+
+module.exports = {
+  sendQuickButtons,
+  sendSingleSelect,
+  truncate
+};
