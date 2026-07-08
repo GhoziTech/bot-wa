@@ -10,19 +10,19 @@ const SALAM = `✨ *YOOO, SELAMAT DATANG DI GHOTZITECH!* ✨\n\n` +
 async function sendMainMenu(sock, to) {
   const sections = [{
     rows: [
-      { title: '👤 Profile', rowId: 'profile', description: 'Cek saldo & data lo' },
-      { title: '📦 List Produk', rowId: 'list_produk', description: 'Semua produk kami' },
-      { title: '📂 Kategori', rowId: 'kategori', description: 'Cari berdasarkan kategori' },
-      { title: '📊 Stock Product', rowId: 'stock', description: 'Stok ter-update' }
+      { title: '👤 Profile', id: 'profile', description: 'Cek saldo & data lo' },
+      { title: '📦 List Produk', id: 'list_produk', description: 'Semua produk kami' },
+      { title: '📂 Kategori', id: 'kategori', description: 'Cari berdasarkan kategori' },
+      { title: '📊 Stock Product', id: 'stock', description: 'Stok ter-update' }
     ]
   }];
   await sock.sendMessage(to, {
-    listMessage: {
-      title: 'GhoziTech - Selamat Datang',
-      description: SALAM,
-      footer: 'GhoziTech - Langganan digital murah abis! 🤑',
-      buttonText: 'Pilih Menu',
-      sections
+    interactive: {
+      type: 'list',
+      header: { type: 'text', text: 'GhoziTech - Selamat Datang' },
+      body: { text: SALAM },
+      footer: { text: 'GhoziTech - Langganan digital murah abis! 🤑' },
+      action: { button: 'Pilih Menu', sections }
     }
   });
 }
@@ -40,19 +40,19 @@ async function sendProfile(sock, to) {
              `🚮 Total Pengeluaran: Rp ${user.total_pengeluaran.toLocaleString('id-ID')}\n` +
              `💳 No. Rekening: ${user.no_rekening || '-'}`;
   const rows = [
-    { title: '➕ Isi Saldo', rowId: 'isi_saldo', description: '' },
-    { title: '📜 Order History', rowId: 'order_history', description: '' },
-    { title: '📞 Customer Service', rowId: 'customer_service', description: '' },
-    { title: '⚙️ Settings', rowId: 'settings', description: '' },
-    { title: '🔙 Kembali Menu', rowId: 'kembali_menu', description: '' }
+    { title: '➕ Isi Saldo', id: 'isi_saldo', description: '' },
+    { title: '📜 Order History', id: 'order_history', description: '' },
+    { title: '📞 Customer Service', id: 'customer_service', description: '' },
+    { title: '⚙️ Settings', id: 'settings', description: '' },
+    { title: '🔙 Kembali Menu', id: 'kembali_menu', description: '' }
   ];
   await sock.sendMessage(to, {
-    listMessage: {
-      title: 'Profil Kamu',
-      description: text,
-      footer: 'GhoziTech - Manage akun lo.',
-      buttonText: 'Pilih',
-      sections: [{ rows }]
+    interactive: {
+      type: 'list',
+      header: { type: 'text', text: 'Profil Kamu' },
+      body: { text },
+      footer: { text: 'GhoziTech - Manage akun lo.' },
+      action: { button: 'Pilih', sections: [{ rows }] }
     }
   });
 }
@@ -70,18 +70,18 @@ async function sendProductList(sock, to, page = 1) {
   products.forEach((p, i) => {
     const num = offset + i + 1, fire = p.sold > 20 ? ' 🔥' : '';
     desc += `${num}. *${p.name}*${fire}\n   ➜ Stock: ${p.stock}\n   ➜ Rating: ${p.rating} ⭐\n   ➜ Terjual: ${p.sold} pcs\n   ➜ Harga: Rp.${p.price.toLocaleString('id-ID')}\n${p.description}\n\n`;
-    rows.push({ title: `${num}. ${p.name} ${fire}`, rowId: `order_${p.id}`, description: `Rp.${p.price.toLocaleString('id-ID')} | Stok: ${p.stock}` });
+    rows.push({ title: `${num}. ${p.name} ${fire}`, id: `order_${p.id}`, description: `Rp.${p.price.toLocaleString('id-ID')} | Stok: ${p.stock}` });
   });
-  if (page < totalPages) rows.push({ title: '➡️ Lanjut halaman berikutnya', rowId: `lanjut_${page + 1}`, description: '' });
-  if (page > 1) rows.push({ title: '⬅️ Kembali halaman sebelumnya', rowId: `lanjut_${page - 1}`, description: '' });
-  rows.push({ title: '🔙 Kembali ke Menu Utama', rowId: 'kembali_menu', description: '' });
+  if (page < totalPages) rows.push({ title: '➡️ Lanjut halaman berikutnya', id: `lanjut_${page + 1}`, description: '' });
+  if (page > 1) rows.push({ title: '⬅️ Kembali halaman sebelumnya', id: `lanjut_${page - 1}`, description: '' });
+  rows.push({ title: '🔙 Kembali ke Menu Utama', id: 'kembali_menu', description: '' });
   await sock.sendMessage(to, {
-    listMessage: {
-      title: 'Daftar Produk',
-      description: desc,
-      footer: 'GhoziTech - Produk pilihan. Beli sekarang, bayar nanti... eh nggak ding, bayar dulu 😜',
-      buttonText: 'Pilih Produk',
-      sections: [{ title: 'Produk', rows }]
+    interactive: {
+      type: 'list',
+      header: { type: 'text', text: 'Daftar Produk' },
+      body: { text: desc },
+      footer: { text: 'GhoziTech - Produk pilihan. Beli sekarang, bayar nanti... eh nggak ding, bayar dulu 😜' },
+      action: { button: 'Pilih Produk', sections: [{ title: 'Produk', rows }] }
     }
   });
 }
@@ -96,15 +96,15 @@ async function sendStockList(sock, to) {
 async function sendCategoryList(sock, to) {
   const cats = db.prepare('SELECT DISTINCT category FROM products WHERE is_active=1').all().map(c => c.category);
   if (!cats.length) return sock.sendMessage(to, { text: 'Belum ada kategori.' });
-  const rows = cats.map(c => ({ title: c, rowId: `kategori_${c}`, description: '' }));
-  rows.push({ title: '🔙 Kembali Menu', rowId: 'kembali_menu', description: '' });
+  const rows = cats.map(c => ({ title: c, id: `kategori_${c}`, description: '' }));
+  rows.push({ title: '🔙 Kembali Menu', id: 'kembali_menu', description: '' });
   await sock.sendMessage(to, {
-    listMessage: {
-      title: 'Kategori Produk',
-      description: '📂 *Kategori Produk*',
-      footer: 'GhoziTech - Pilih kategori favorit lo.',
-      buttonText: 'Pilih',
-      sections: [{ rows }]
+    interactive: {
+      type: 'list',
+      header: { type: 'text', text: 'Kategori Produk' },
+      body: { text: '📂 *Kategori Produk*' },
+      footer: { text: 'GhoziTech - Pilih kategori favorit lo.' },
+      action: { button: 'Pilih', sections: [{ rows }] }
     }
   });
 }
@@ -115,16 +115,16 @@ async function sendCategoryProducts(sock, to, category) {
   let text = `📂 *${category}*\n\n`;
   const rows = products.map(p => {
     text += `${p.name} - Rp.${p.price.toLocaleString('id-ID')} (Stok: ${p.stock})\n`;
-    return { title: p.name, rowId: `order_${p.id}`, description: `Rp.${p.price.toLocaleString('id-ID')}` };
+    return { title: p.name, id: `order_${p.id}`, description: `Rp.${p.price.toLocaleString('id-ID')}` };
   });
-  rows.push({ title: '🔙 Kembali ke Kategori', rowId: 'kategori', description: '' });
+  rows.push({ title: '🔙 Kembali ke Kategori', id: 'kategori', description: '' });
   await sock.sendMessage(to, {
-    listMessage: {
-      title: `Kategori: ${category}`,
-      description: text,
-      footer: 'GhoziTech - Pilih produk.',
-      buttonText: 'Pilih',
-      sections: [{ rows }]
+    interactive: {
+      type: 'list',
+      header: { type: 'text', text: `Kategori: ${category}` },
+      body: { text },
+      footer: { text: 'GhoziTech - Pilih produk.' },
+      action: { button: 'Pilih', sections: [{ rows }] }
     }
   });
 }
@@ -144,18 +144,18 @@ async function sendCustomerService(sock, to) {
 
 async function sendSettings(sock, to) {
   const rows = [
-    { title: '✏️ Ubah Nama', rowId: 'set_nama', description: '' },
-    { title: '📧 Ubah Email', rowId: 'set_email', description: '' },
-    { title: '💳 Ubah Rekening', rowId: 'set_rekening', description: '' },
-    { title: '🔙 Kembali Menu', rowId: 'kembali_menu', description: '' }
+    { title: '✏️ Ubah Nama', id: 'set_nama', description: '' },
+    { title: '📧 Ubah Email', id: 'set_email', description: '' },
+    { title: '💳 Ubah Rekening', id: 'set_rekening', description: '' },
+    { title: '🔙 Kembali Menu', id: 'kembali_menu', description: '' }
   ];
   await sock.sendMessage(to, {
-    listMessage: {
-      title: 'Pengaturan Akun',
-      description: '⚙️ *Pengaturan Akun*',
-      footer: 'GhoziTech - Sesuaikan data lo.',
-      buttonText: 'Pilih',
-      sections: [{ rows }]
+    interactive: {
+      type: 'list',
+      header: { type: 'text', text: 'Pengaturan Akun' },
+      body: { text: '⚙️ *Pengaturan Akun*' },
+      footer: { text: 'GhoziTech - Sesuaikan data lo.' },
+      action: { button: 'Pilih', sections: [{ rows }] }
     }
   });
 }
