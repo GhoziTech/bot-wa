@@ -17,10 +17,13 @@ async function sendMainMenu(sock, to) {
     ]
   }];
   await sock.sendMessage(to, {
-    text: SALAM,
-    footer: 'GhoziTech - Langganan digital murah abis! 🤑',
-    buttonText: 'Pilih Menu',
-    sections
+    listMessage: {
+      title: 'GhoziTech - Selamat Datang',
+      description: SALAM,
+      footer: 'GhoziTech - Langganan digital murah abis! 🤑',
+      buttonText: 'Pilih Menu',
+      sections
+    }
   });
 }
 
@@ -44,10 +47,13 @@ async function sendProfile(sock, to) {
     { title: '🔙 Kembali Menu', rowId: 'kembali_menu', description: '' }
   ];
   await sock.sendMessage(to, {
-    text,
-    footer: 'GhoziTech - Manage akun lo.',
-    buttonText: 'Pilih',
-    sections: [{ rows }]
+    listMessage: {
+      title: 'Profil Kamu',
+      description: text,
+      footer: 'GhoziTech - Manage akun lo.',
+      buttonText: 'Pilih',
+      sections: [{ rows }]
+    }
   });
 }
 
@@ -70,10 +76,13 @@ async function sendProductList(sock, to, page = 1) {
   if (page > 1) rows.push({ title: '⬅️ Kembali halaman sebelumnya', rowId: `lanjut_${page - 1}`, description: '' });
   rows.push({ title: '🔙 Kembali ke Menu Utama', rowId: 'kembali_menu', description: '' });
   await sock.sendMessage(to, {
-    text: desc,
-    footer: 'GhoziTech - Produk pilihan. Beli sekarang, bayar nanti... eh nggak ding, bayar dulu 😜',
-    buttonText: 'Pilih Produk',
-    sections: [{ title: 'Produk', rows }]
+    listMessage: {
+      title: 'Daftar Produk',
+      description: desc,
+      footer: 'GhoziTech - Produk pilihan. Beli sekarang, bayar nanti... eh nggak ding, bayar dulu 😜',
+      buttonText: 'Pilih Produk',
+      sections: [{ title: 'Produk', rows }]
+    }
   });
 }
 
@@ -90,10 +99,13 @@ async function sendCategoryList(sock, to) {
   const rows = cats.map(c => ({ title: c, rowId: `kategori_${c}`, description: '' }));
   rows.push({ title: '🔙 Kembali Menu', rowId: 'kembali_menu', description: '' });
   await sock.sendMessage(to, {
-    text: '📂 *Kategori Produk*',
-    footer: 'GhoziTech - Pilih kategori favorit lo.',
-    buttonText: 'Pilih',
-    sections: [{ rows }]
+    listMessage: {
+      title: 'Kategori Produk',
+      description: '📂 *Kategori Produk*',
+      footer: 'GhoziTech - Pilih kategori favorit lo.',
+      buttonText: 'Pilih',
+      sections: [{ rows }]
+    }
   });
 }
 
@@ -107,10 +119,13 @@ async function sendCategoryProducts(sock, to, category) {
   });
   rows.push({ title: '🔙 Kembali ke Kategori', rowId: 'kategori', description: '' });
   await sock.sendMessage(to, {
-    text,
-    footer: 'GhoziTech - Pilih produk.',
-    buttonText: 'Pilih',
-    sections: [{ rows }]
+    listMessage: {
+      title: `Kategori: ${category}`,
+      description: text,
+      footer: 'GhoziTech - Pilih produk.',
+      buttonText: 'Pilih',
+      sections: [{ rows }]
+    }
   });
 }
 
@@ -135,10 +150,13 @@ async function sendSettings(sock, to) {
     { title: '🔙 Kembali Menu', rowId: 'kembali_menu', description: '' }
   ];
   await sock.sendMessage(to, {
-    text: '⚙️ *Pengaturan Akun*',
-    footer: 'GhoziTech - Sesuaikan data lo.',
-    buttonText: 'Pilih',
-    sections: [{ rows }]
+    listMessage: {
+      title: 'Pengaturan Akun',
+      description: '⚙️ *Pengaturan Akun*',
+      footer: 'GhoziTech - Sesuaikan data lo.',
+      buttonText: 'Pilih',
+      sections: [{ rows }]
+    }
   });
 }
 
