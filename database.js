@@ -1,6 +1,19 @@
 const Database = require('better-sqlite3');
-const db = new Database('bot.db');
+const fs = require('fs');
+const path = require('path');
+
+// Tanpa DATA_DIR, lokasi tetap sama seperti deployment lama.
+// Di Railway, arahkan DATA_DIR ke mount volume, misalnya /data.
+const dataDir = path.resolve(process.env.DATA_DIR || __dirname);
+fs.mkdirSync(dataDir, { recursive: true });
+
+const dbPath = process.env.DB_PATH
+  ? path.resolve(process.env.DB_PATH)
+  : path.join(dataDir, 'bot.db');
+
+const db = new Database(dbPath);
 db.pragma('journal_mode = WAL');
+db.pragma('foreign_keys = ON');
 
 db.exec(`CREATE TABLE IF NOT EXISTS users (
     phone TEXT PRIMARY KEY,
@@ -43,5 +56,7 @@ db.exec(`CREATE TABLE IF NOT EXISTS orders (
     FOREIGN KEY(product_id) REFERENCES products(id),
     FOREIGN KEY(credential_id) REFERENCES credentials(id)
 )`);
+
+console.log(`[DB] SQLite aktif: ${dbPath}`);
 
 module.exports = db;
