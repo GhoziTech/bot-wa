@@ -1,7 +1,7 @@
 {
   "name": "ghozitech-bot",
-  "version": "1.1.0",
-  "description": "Bot WhatsApp GhoziTech dengan perbaikan LID untuk Baileys v7",
+  "version": "2.0.0",
+  "description": "GhoziTech WhatsApp bot dengan menu angka, Baileys v7, dan routing LID",
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
@@ -13,7 +13,7 @@
   "dependencies": {
     "@hapi/boom": "^10.0.1",
     "baileys": "7.0.0-rc13",
-    "better-sqlite3": "^11.7.0",
+    "better-sqlite3": "11.7.0",
     "express": "^4.18.2",
     "qrcode": "^1.5.3"
   }
