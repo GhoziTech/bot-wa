@@ -1,4 +1,5 @@
 const db = require('./database');
+const { getProductWithStock } = require('./inventory');
 
 const STORE_NAME = process.env.STORE_NAME || 'GhoziTech';
 
@@ -9,11 +10,20 @@ function money(value) {
 function statusLabel(status) {
   const labels = {
     delivered: '✅ Selesai',
+    processing: '🛠️ Diproses',
     paid: '💰 Dibayar',
     pending: '⏳ Menunggu',
     cancelled: '❌ Dibatalkan'
   };
   return labels[status] || status;
+}
+
+function stockExpression(alias = 'p') {
+  return `CASE
+    WHEN COALESCE(${alias}.stock_mode, 'credential')='credential'
+      THEN (SELECT COUNT(*) FROM credentials c WHERE c.product_id=${alias}.id AND c.is_sold=0)
+    ELSE COALESCE(${alias}.stock_qty, 0)
+  END`;
 }
 
 async function sendText(sock, to, text) {
@@ -80,11 +90,10 @@ function getProductsPage(page = 1, category = null) {
   const countParams = category ? [category] : [];
 
   const products = db.prepare(`
-    SELECT p.*,
-      (SELECT COUNT(*) FROM credentials c WHERE c.product_id=p.id AND c.is_sold=0) AS stock
+    SELECT p.*, ${stockExpression('p')} AS stock
     FROM products p
     WHERE p.is_active=1 ${filter}
-    ORDER BY p.id
+    ORDER BY CASE WHEN COALESCE(p.sort_order,0)>0 THEN p.sort_order ELSE 999999 END, p.id
     LIMIT ? OFFSET ?
   `).all(...params);
 
@@ -103,49 +112,57 @@ function getProductsPage(page = 1, category = null) {
 
 async function sendProductList(sock, to, page = 1, category = null) {
   const data = getProductsPage(page, category);
-  if (!data.products.length && data.page > 1) {
-    return sendProductList(sock, to, data.totalPages, category);
-  }
+  if (!data.products.length && data.page > 1) return sendProductList(sock, to, data.totalPages, category);
 
-  const title = category ? `KATEGORI: ${category}` : 'SEMUA PRODUK';
+  const title = category ? `KATEGORI ${String(category).toUpperCase()}` : 'DAFTAR HALAMAN SEMUA PRODUCT';
   let text = `📦 *${title} (${data.page}/${data.totalPages})*\n\n`;
+  const choiceMap = {};
 
-  if (!data.products.length) {
-    text += 'Belum ada produk aktif pada daftar ini.\n\n';
-  }
+  if (!data.products.length) text += 'Belum ada produk aktif pada daftar ini.\n\n';
 
   data.products.forEach((product, index) => {
-    const number = index + 1;
+    const displayNumber = data.offset + index + 1;
     const fire = Number(product.sold) >= 20 ? ' 🔥' : '';
-    text += `${number}. *${product.name}*${fire}\n`;
-    text += `   ➜ Stock: ${product.stock}\n`;
-    text += `   ➜ Rating: ${Number(product.rating || 0).toFixed(1)} ⭐\n`;
-    text += `   ➜ Terjual: ${product.sold || 0} pcs\n`;
-    text += `   ➜ Harga: Rp ${money(product.price)}\n`;
+    const stockBadge = Number(product.stock) <= 0 ? ' • HABIS' : Number(product.stock) <= 3 ? ' • LOW STOCK' : '';
+    choiceMap[String(displayNumber)] = product.id;
+
+    text += `${displayNumber}. *${product.name}*${fire}\n`;
+    text += `  ➜ Stock: ${product.stock}${stockBadge}\n`;
+    text += `  ➜ Rating: ${Number(product.rating || 0).toFixed(1)} ⭐\n`;
+    text += `  ➜ Terjual: ${product.sold || 0} pcs\n`;
+    text += `  ➜ Harga: Rp.${money(product.price)}\n`;
     if (product.description) text += `${product.description}\n`;
     text += '\n';
   });
 
-  text += '*PILIHAN*\n';
-  if (data.products.length) text += '1–5. Pilih produk sesuai nomor di atas\n';
-  if (data.page < data.totalPages) text += '6. ➡️ Halaman Berikutnya\n';
-  if (data.page > 1) text += '7. ⬅️ Halaman Sebelumnya\n';
-  text += category ? '8. 📂 Kembali ke Kategori\n' : '8. 📊 Lihat Stock\n';
-  text += category ? '9. 📦 Semua Produk\n' : '9. 📂 Kategori Produk\n';
+  text += '*PILIHAN NAVIGASI*\n';
+  if (data.products.length) {
+    const first = data.offset + 1;
+    const last = data.offset + data.products.length;
+    text += `${first}–${last}. Pilih produk sesuai nomor\n`;
+  }
+  if (data.page < data.totalPages) text += '91. ➡️ Halaman Berikutnya\n';
+  if (data.page > 1) text += '92. ⬅️ Halaman Sebelumnya\n';
+  text += category ? '98. 📂 Kembali ke Kategori\n' : '98. 📊 Lihat Stock Tersedia\n';
+  text += category ? '99. 📦 Semua Produk\n' : '99. 📂 Kategori Produk\n';
   text += '0. 🏠 Menu Utama';
 
   await sendText(sock, to, text);
-  return data;
+  return { ...data, choiceMap };
 }
 
 async function sendProductDetail(sock, to, productId) {
-  const product = db.prepare(`
-    SELECT p.*,
-      (SELECT COUNT(*) FROM credentials c WHERE c.product_id=p.id AND c.is_sold=0) AS stock
-    FROM products p WHERE p.id=? AND p.is_active=1
-  `).get(productId);
-
+  const product = getProductWithStock(productId);
   if (!product) return null;
+
+  const availability = Number(product.stock) > 0 ? `✅ Tersedia (${product.stock})` : '❌ Habis';
+  const process = product.stock_mode === 'manual'
+    ? 'Diproses admin setelah pembayaran terverifikasi'
+    : product.stock_mode === 'credential'
+      ? 'Dikirim otomatis dari stock unik'
+      : product.delivery_text
+        ? 'Dikirim otomatis'
+        : 'Diproses admin setelah pembayaran terverifikasi';
 
   await sendText(sock, to,
 `🛍️ *DETAIL PRODUK*
@@ -153,9 +170,10 @@ async function sendProductDetail(sock, to, productId) {
 📦 Produk: *${product.name}*
 📂 Kategori: ${product.category || '-'}
 💰 Harga: Rp ${money(product.price)}
-📊 Stock: ${product.stock}
+📊 Stock: ${availability}
 ⭐ Rating: ${Number(product.rating || 0).toFixed(1)}
 🛒 Terjual: ${product.sold || 0} pcs
+⚡ Proses: ${process}
 
 ${product.description || 'Tidak ada deskripsi tambahan.'}
 
@@ -168,19 +186,21 @@ ${product.description || 'Tidak ada deskripsi tambahan.'}
   return product;
 }
 
-async function sendOrderConfirmation(sock, to, product, stock) {
+async function sendOrderConfirmation(sock, to, product, stock, balance) {
   return sendText(sock, to,
 `🧾 *KONFIRMASI ORDER*
 
 Produk: *${product.name}*
 Harga: Rp ${money(product.price)}
 Stock tersedia: ${stock}
+Saldo akun: Rp ${money(balance)}
 
-Pastikan produk dan ketentuannya sudah sesuai sebelum melanjutkan.
+Pilih metode pembayaran. Pembelian dengan saldo diproses langsung apabila saldo dan stock mencukupi.
 
 *PILIHAN*
-1. ✅ Lanjut ke Pembayaran
-2. ❌ Batalkan
+1. 💰 Bayar dengan Saldo
+2. 💳 Bayar menggunakan QRIS
+3. ❌ Batalkan
 0. 🏠 Menu Utama`);
 }
 
@@ -219,65 +239,80 @@ _Balas menggunakan nomor pilihan._`);
 
 async function sendCategoryList(sock, to, page = 1) {
   const perPage = 7;
-  const total = db.prepare(`
-    SELECT COUNT(DISTINCT category) AS cnt
-    FROM products
-    WHERE is_active=1 AND category IS NOT NULL AND TRIM(category)<>''
-  `).get().cnt;
-  const totalPages = Math.max(1, Math.ceil(total / perPage));
+  const rows = db.prepare(`
+    SELECT p.category,
+      COUNT(*) AS total_products,
+      SUM(${stockExpression('p')}) AS available_units,
+      MIN(p.price) AS min_price,
+      MAX(p.price) AS max_price
+    FROM products p
+    WHERE p.is_active=1 AND p.category IS NOT NULL AND TRIM(p.category)<>''
+    GROUP BY p.category
+    ORDER BY p.category
+  `).all();
+
+  const totalPages = Math.max(1, Math.ceil(rows.length / perPage));
   const safePage = Math.min(totalPages, Math.max(1, Number(page) || 1));
   const offset = (safePage - 1) * perPage;
-  const categories = db.prepare(`
-    SELECT category, COUNT(*) AS total
-    FROM products
-    WHERE is_active=1 AND category IS NOT NULL AND TRIM(category)<>''
-    GROUP BY category
-    ORDER BY category
-    LIMIT ? OFFSET ?
-  `).all(perPage, offset);
+  const categories = rows.slice(offset, offset + perPage);
+  const choiceMap = {};
 
   let text = `📂 *KATEGORI PRODUK (${safePage}/${totalPages})*\n\n`;
   if (!categories.length) text += 'Belum ada kategori produk aktif.\n';
   categories.forEach((category, index) => {
-    text += `${index + 1}. ${category.category} (${category.total} produk)\n`;
+    const displayNumber = offset + index + 1;
+    choiceMap[String(displayNumber)] = category.category;
+    const range = Number(category.min_price) === Number(category.max_price)
+      ? `Rp ${money(category.min_price)}`
+      : `Rp ${money(category.min_price)}–${money(category.max_price)}`;
+    text += `${displayNumber}. *${category.category}*\n`;
+    text += `   ${category.total_products} produk • ${category.available_units || 0} stock • ${range}\n\n`;
   });
 
-  text += '\n*PILIHAN*\n';
-  if (categories.length) text += '1–7. Pilih kategori sesuai nomor\n';
-  if (safePage < totalPages) text += '8. ➡️ Halaman Berikutnya\n';
-  if (safePage > 1) text += '9. ⬅️ Halaman Sebelumnya\n';
+  text += '*PILIHAN*\n';
+  if (categories.length) {
+    text += `${offset + 1}–${offset + categories.length}. Pilih kategori\n`;
+  }
+  if (safePage < totalPages) text += '91. ➡️ Halaman Berikutnya\n';
+  if (safePage > 1) text += '92. ⬅️ Halaman Sebelumnya\n';
+  text += '98. 📦 Semua Produk\n';
   text += '0. 🏠 Menu Utama';
 
   await sendText(sock, to, text);
-  return { categories, page: safePage, totalPages };
+  return { categories, page: safePage, totalPages, choiceMap };
 }
 
 async function sendStockList(sock, to, page = 1) {
   const perPage = 10;
-  const safePage = Math.max(1, Number(page) || 1);
-  const offset = (safePage - 1) * perPage;
-  const products = db.prepare(`
-    SELECT p.name,
-      (SELECT COUNT(*) FROM credentials c WHERE c.product_id=p.id AND c.is_sold=0) AS stock
-    FROM products p
-    WHERE p.is_active=1
-    ORDER BY p.id
-    LIMIT ? OFFSET ?
-  `).all(perPage, offset);
-  const total = db.prepare('SELECT COUNT(*) AS cnt FROM products WHERE is_active=1').get().cnt;
-  const totalPages = Math.max(1, Math.ceil(total / perPage));
+  const all = db.prepare(`
+    SELECT * FROM (
+      SELECT p.id, p.name, p.sort_order, ${stockExpression('p')} AS stock
+      FROM products p
+      WHERE p.is_active=1
+    ) available
+    WHERE stock>0
+    ORDER BY CASE WHEN COALESCE(sort_order,0)>0 THEN sort_order ELSE 999999 END, id
+  `).all();
 
-  let text = `📊 *DAFTAR STOCK PRODUCT (${safePage}/${totalPages})*\n\n`;
-  if (!products.length) text += 'Belum ada produk aktif.\n';
+  const totalPages = Math.max(1, Math.ceil(all.length / perPage));
+  const safePage = Math.min(totalPages, Math.max(1, Number(page) || 1));
+  const offset = (safePage - 1) * perPage;
+  const products = all.slice(offset, offset + perPage);
+  const totalUnits = all.reduce((sum, item) => sum + Number(item.stock || 0), 0);
+
+  let text = `📦 *DAFTAR STOCK PRODUCT (HALAMAN ${safePage}/${totalPages})*\n\n`;
+  if (!products.length) text += 'Belum ada stock produk yang tersedia.\n';
   products.forEach((product, index) => {
-    text += `${offset + index + 1}. ${product.name} ➜ Stock ${product.stock}\n`;
+    const badge = Number(product.stock) <= 3 ? ' ⚠️' : '';
+    text += `${offset + index + 1}. *${product.name}* ➜ Stock ${product.stock}${badge}\n`;
   });
 
+  text += `\n📊 ${all.length} produk tersedia • Total ${totalUnits} unit\n`;
   text += '\n*PILIHAN*\n';
-  if (safePage < totalPages) text += '1. ➡️ Halaman Berikutnya\n';
-  if (safePage > 1) text += '2. ⬅️ Halaman Sebelumnya\n';
-  text += '3. 📦 Semua Produk\n';
-  text += '4. 📂 Kategori Produk\n';
+  if (safePage < totalPages) text += '91. ➡️ Halaman Berikutnya\n';
+  if (safePage > 1) text += '92. ⬅️ Halaman Sebelumnya\n';
+  text += '98. 📦 Semua Produk\n';
+  text += '99. 📂 Kategori Produk\n';
   text += '0. 🏠 Menu Utama';
 
   await sendText(sock, to, text);
@@ -286,7 +321,7 @@ async function sendStockList(sock, to, page = 1) {
 
 async function sendOrderHistory(sock, to, userKey) {
   const orders = db.prepare(`
-    SELECT o.id, p.name, o.amount, o.status, o.created_at
+    SELECT o.id, p.name, o.amount, o.status, o.payment_method, o.created_at
     FROM orders o
     JOIN products p ON p.id=o.product_id
     WHERE o.user_phone=?
@@ -295,48 +330,41 @@ async function sendOrderHistory(sock, to, userKey) {
   `).all(userKey);
 
   let text = '📜 *ORDER HISTORY*\n\n';
-  if (!orders.length) {
-    text += 'Belum ada riwayat order pada akun ini.\n';
-  } else {
+  if (!orders.length) text += 'Belum ada riwayat order pada akun ini.\n';
+  else {
     orders.forEach((order) => {
       text += `#${order.id} • ${order.name}\n`;
-      text += `Rp ${money(order.amount)} • ${statusLabel(order.status)}\n`;
+      text += `Rp ${money(order.amount)} • ${statusLabel(order.status)} • ${(order.payment_method || '-').toUpperCase()}\n`;
       text += `${order.created_at}\n\n`;
     });
   }
 
-  text += '*PILIHAN*\n';
-  text += '1. 📦 Semua Produk\n';
-  text += '2. ➕ Isi Saldo\n';
-  text += '9. 💬 Customer Service\n';
-  text += '0. 🏠 Menu Utama';
-
+  text += '*PILIHAN*\n1. 📦 Semua Produk\n2. ➕ Isi Saldo\n9. 💬 Customer Service\n0. 🏠 Menu Utama';
   return sendText(sock, to, text);
 }
 
 async function sendTopOrder(sock, to) {
   const products = db.prepare(`
-    SELECT p.*,
-      (SELECT COUNT(*) FROM credentials c WHERE c.product_id=p.id AND c.is_sold=0) AS stock
+    SELECT p.*, ${stockExpression('p')} AS stock
     FROM products p
     WHERE p.is_active=1
     ORDER BY p.sold DESC, p.rating DESC
     LIMIT 5
   `).all();
 
-  let text = '🔥 *TOP ORDER GHOTZITECH*\n\n';
+  let text = `🔥 *TOP ORDER ${STORE_NAME.toUpperCase()}*\n\n`;
+  const choiceMap = {};
   if (!products.length) text += 'Belum ada produk aktif.\n';
   products.forEach((product, index) => {
+    choiceMap[String(index + 1)] = product.id;
     text += `${index + 1}. *${product.name}*\n`;
     text += `   Terjual ${product.sold || 0} • Stock ${product.stock} • Rp ${money(product.price)}\n\n`;
   });
   text += '*PILIHAN*\n';
   if (products.length) text += '1–5. Pilih produk sesuai nomor\n';
-  text += '8. 📦 Semua Produk\n';
-  text += '9. 📂 Kategori Produk\n';
-  text += '0. 🏠 Menu Utama';
+  text += '8. 📦 Semua Produk\n9. 📂 Kategori Produk\n0. 🏠 Menu Utama';
   await sendText(sock, to, text);
-  return { products };
+  return { products, choiceMap };
 }
 
 async function sendSettings(sock, to) {
