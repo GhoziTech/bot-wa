@@ -10,9 +10,13 @@ const SALAM = `✨ *YOOO, SELAMAT DATANG DI ${STORE_NAME.toUpperCase()}!* ✨\n\
   `Gunakan tombol yang tersedia. Pesan lain di luar tombol tidak akan dijawab bot.`;
 
 async function sendMainMenu(sock, to) {
+  // Kirim salam sebagai pesan teks biasa lebih dulu. Ini memastikan pengguna
+  // tetap melihat respons walaupun native-flow button sedang ditolak klien WA.
+  await sock.sendMessage(to, { text: SALAM });
+
   return sendQuickButtons(sock, to, {
     title: `${STORE_NAME} • Menu Utama`,
-    text: SALAM,
+    text: 'Silakan pilih salah satu tombol di bawah.',
     footer: `${STORE_NAME} • #stop untuk menutup bot`,
     buttons: [
       { id: 'profile', text: '👤 Profil' },
