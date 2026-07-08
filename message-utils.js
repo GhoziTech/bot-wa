@@ -1,136 +1,83 @@
-let baileysPromise;
-
-function loadBaileys() {
-  if (!baileysPromise) baileysPromise = import('baileys');
-  return baileysPromise;
+function unwrapMessage(message = {}) {
+  let current = message;
+  for (let index = 0; index < 6; index += 1) {
+    if (current.ephemeralMessage?.message) current = current.ephemeralMessage.message;
+    else if (current.viewOnceMessage?.message) current = current.viewOnceMessage.message;
+    else if (current.viewOnceMessageV2?.message) current = current.viewOnceMessageV2.message;
+    else if (current.documentWithCaptionMessage?.message) current = current.documentWithCaptionMessage.message;
+    else break;
+  }
+  return current;
 }
 
-function truncate(value, max) {
-  const text = String(value ?? '');
-  return text.length <= max ? text : `${text.slice(0, Math.max(0, max - 1))}…`;
+function extractText(msg) {
+  const message = unwrapMessage(msg.message || {});
+  return (
+    message.conversation ||
+    message.extendedTextMessage?.text ||
+    message.imageMessage?.caption ||
+    message.videoMessage?.caption ||
+    ''
+  ).trim();
 }
 
-function normalizeQuickButtons(buttons = []) {
-  return buttons.slice(0, 3).map((button) => ({
-    name: 'quick_reply',
-    buttonParamsJson: JSON.stringify({
-      display_text: truncate(button.text, 20),
-      id: String(button.id)
-    })
-  }));
+function jidDigits(jid = '') {
+  return String(jid).split('@')[0].split(':')[0].replace(/\D/g, '');
 }
 
-function normalizeSections(sections = []) {
-  let remaining = 10;
-  const result = [];
+async function resolveChatIdentity(sock, msg) {
+  const key = msg.key || {};
+  const remote = key.remoteJid || '';
+  const alt = key.remoteJidAlt || key.participantAlt || '';
 
-  for (const section of sections) {
-    if (remaining <= 0) break;
-    const rows = [];
+  // Balasan harus mengikuti alamat percakapan masuk. Jika pesan masuk memakai LID,
+  // jangan paksa pengiriman ke PN karena dapat ditolak secara asynchronous.
+  let replyJid = remote;
 
-    for (const row of section.rows || []) {
-      if (remaining <= 0) break;
-      rows.push({
-        id: String(row.id ?? row.rowId),
-        title: truncate(row.title, 24),
-        description: truncate(row.description || '', 72),
-        ...(row.header ? { header: truncate(row.header, 24) } : {})
-      });
-      remaining -= 1;
-    }
-
-    if (rows.length) {
-      result.push({
-        title: truncate(section.title || 'Pilihan', 24),
-        rows
-      });
+  if (remote.endsWith('@s.whatsapp.net')) {
+    try {
+      const mappedLid = await sock.signalRepository?.lidMapping?.getLIDForPN?.(remote);
+      if (mappedLid) replyJid = mappedLid;
+    } catch (error) {
+      console.warn('[PN->LID MAP]', error?.message || error);
     }
   }
 
-  return result;
-}
+  let phoneJid = alt.endsWith('@s.whatsapp.net') ? alt : '';
+  if (!phoneJid && remote.endsWith('@s.whatsapp.net')) phoneJid = remote;
 
-async function relayNativeInteractive(sock, to, payload) {
-  const { proto, generateWAMessageFromContent } = await loadBaileys();
-  const nativeButtons = payload.nativeButtons || [];
-
-  if (!to || !nativeButtons.length) {
-    throw new Error('Tujuan dan tombol interaktif wajib tersedia.');
+  if (!phoneJid && remote.endsWith('@lid')) {
+    try {
+      phoneJid = await sock.signalRepository?.lidMapping?.getPNForLID?.(remote) || '';
+    } catch (error) {
+      console.warn('[LID->PN MAP]', error?.message || error);
+    }
   }
 
-  const content = {
-    viewOnceMessage: {
-      message: {
-        messageContextInfo: {
-          deviceListMetadata: {},
-          deviceListMetadataVersion: 2
-        },
-        interactiveMessage: proto.Message.InteractiveMessage.create({
-          header: proto.Message.InteractiveMessage.Header.create({
-            title: truncate(payload.title || '', 60),
-            subtitle: '',
-            hasMediaAttachment: false
-          }),
-          body: proto.Message.InteractiveMessage.Body.create({
-            text: payload.text || ''
-          }),
-          footer: proto.Message.InteractiveMessage.Footer.create({
-            text: truncate(payload.footer || '', 60)
-          }),
-          nativeFlowMessage: proto.Message.InteractiveMessage.NativeFlowMessage.create({
-            buttons: nativeButtons,
-            messageParamsJson: '{}'
-          })
-        })
-      }
-    }
+  const phone = jidDigits(phoneJid);
+  const userKey = phone || `lid:${jidDigits(remote)}`;
+  const displayPhone = phone || remote;
+
+  console.log(`[ROUTE] inbound=${remote} alt=${alt || '-'} outbound=${replyJid} user=${userKey}`);
+  return {
+    replyJid: replyJid || remote,
+    userKey,
+    displayPhone
   };
-
-  const generated = generateWAMessageFromContent(to, content, {
-    userJid: sock.user?.id || ''
-  });
-
-  console.log(`[OUTBOUND INTERACTIVE] to=${to} id=${generated.key.id}`);
-  await sock.relayMessage(to, generated.message, {
-    messageId: generated.key.id
-  });
-  console.log(`[OUTBOUND INTERACTIVE RELAYED] to=${to} id=${generated.key.id}`);
-
-  return generated;
 }
 
-async function sendQuickButtons(sock, to, payload) {
-  return relayNativeInteractive(sock, to, {
-    title: payload.title,
-    text: payload.text,
-    footer: payload.footer,
-    nativeButtons: normalizeQuickButtons(payload.buttons)
-  });
-}
-
-async function sendSingleSelect(sock, to, payload) {
-  const sections = normalizeSections(payload.sections);
-  const nativeButtons = [
-    {
-      name: 'single_select',
-      buttonParamsJson: JSON.stringify({
-        title: truncate(payload.buttonText || 'Pilih Menu', 20),
-        sections
-      })
-    },
-    ...normalizeQuickButtons(payload.quickButtons || [])
-  ];
-
-  return relayNativeInteractive(sock, to, {
-    title: payload.title,
-    text: payload.text,
-    footer: payload.footer,
-    nativeButtons
-  });
+function getOwnerJid(sock) {
+  if (process.env.OWNER_JID) return process.env.OWNER_JID;
+  if (sock.user?.lid) return sock.user.lid;
+  const ownerPhone = String(process.env.OWNER_PHONE || '6285727688928').replace(/\D/g, '');
+  const selfPhone = jidDigits(sock.user?.id);
+  return `${selfPhone || ownerPhone}@s.whatsapp.net`;
 }
 
 module.exports = {
-  sendQuickButtons,
-  sendSingleSelect,
-  truncate
+  unwrapMessage,
+  extractText,
+  jidDigits,
+  resolveChatIdentity,
+  getOwnerJid
 };
