@@ -13,6 +13,7 @@ async function handleMessage(sock, msg) {
   // Terima semua format personal chat (termasuk @lid), tolak broadcast & grup
   if (!from || from === 'status@broadcast' || from.includes('@g.us')) return;
   const phone = from.split('@')[0];
+  const to = phone + '@s.whatsapp.net';
 
   // Register otomatis
   let user = db.prepare('SELECT * FROM users WHERE phone = ?').get(phone);
@@ -34,11 +35,11 @@ async function handleMessage(sock, msg) {
   } else if (messageType === 'listResponseMessage') {
     const rowId = msg.message.listResponseMessage.singleSelectReply.selectedRowId;
     console.log(`List response: ${rowId}`);
-    return await handleListAction(sock, from, phone, rowId);
+    return await handleListAction(sock, to, phone, rowId);
   } else if (messageType === 'buttonsResponseMessage') {
     const buttonId = msg.message.buttonsResponseMessage.selectedButtonId;
     console.log(`Button response: ${buttonId}`);
-    return await handleListAction(sock, from, phone, buttonId);
+    return await handleListAction(sock, to, phone, buttonId);
   } else {
     console.log('Unhandled message type:', JSON.stringify(msg.message).slice(0, 200));
     return;
@@ -57,7 +58,7 @@ async function handleMessage(sock, msg) {
   // Jika /mulai, reset state dan tampilkan menu utama
   if (text === '/mulai') {
     userStates.set(phone, { step: 'idle' });
-    return await menu.sendMainMenu(sock, from);
+    return await menu.sendMainMenu(sock, to);
   }
 
   // Admin command (hanya untuk nomor admin)
@@ -68,17 +69,17 @@ async function handleMessage(sock, msg) {
 
   // State khusus (order, topup, settings)
   if (['order_confirm','order_payment','isi_saldo','topup_payment','settings_name','settings_email','settings_rekening'].includes(state.step)) {
-    return await handleState(sock, from, phone, state, text.toLowerCase());
+    return await handleState(sock, to, phone, state, text.toLowerCase());
   }
 
   // Navigasi manual (jika user mengetik rowId seperti "profile", "list_produk", dll.)
   const actions = ['profile','list_produk','kategori','stock','isi_saldo','order_history','customer_service','settings','kembali_menu','set_nama','set_email','set_rekening'];
   if (actions.includes(text) || text.startsWith('order_') || text.startsWith('lanjut_') || text.startsWith('kategori_')) {
-    return await handleListAction(sock, from, phone, text);
+    return await handleListAction(sock, to, phone, text);
   }
 
   // Jika tidak dikenali, tetap tampilkan menu utama (biar user nggak bingung)
-  await menu.sendMainMenu(sock, from);
+  await menu.sendMainMenu(sock, to);
 }
 
 // ============ HANDLE LIST ACTION ============
