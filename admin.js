@@ -1,57 +1,70 @@
 const db = require('./database');
 
-function recipientJid(value = '') {
-  const raw = String(value).trim();
-  if (raw.includes('@')) return raw;
-  return `${raw.replace(/\D/g, '')}@s.whatsapp.net`;
+function getRecipientJid(userKey) {
+  const session = db.prepare('SELECT reply_jid FROM bot_sessions WHERE user_key=?').get(userKey);
+  if (session?.reply_jid) return session.reply_jid;
+  if (String(userKey).startsWith('lid:')) return `${String(userKey).slice(4)}@lid`;
+  return `${String(userKey).replace(/\D/g, '')}@s.whatsapp.net`;
+}
+
+function extractText(msg) {
+  return (
+    msg.message?.conversation ||
+    msg.message?.extendedTextMessage?.text ||
+    msg.message?.imageMessage?.caption ||
+    ''
+  ).trim();
 }
 
 async function handleAdminCommand(sock, msg) {
   const from = msg.key.remoteJid;
-  const message = msg.message || {};
-  const text = (
-    message.conversation ||
-    message.extendedTextMessage?.text ||
-    message.imageMessage?.caption ||
-    ''
-  ).trim();
-
+  const text = extractText(msg);
   if (!text) return;
+
   const args = text.slice(1).trim().split(/\s+/);
-  const cmd = (args[0] || '').toLowerCase();
+  const cmd = String(args[0] || '').toLowerCase();
 
   if (cmd === 'verifikasi') {
     const orderId = Number.parseInt(args[1], 10);
     if (!orderId) return sock.sendMessage(from, { text: 'Format: /verifikasi <order_id>' });
 
-    const transaction = db.transaction(() => {
-      const order = db.prepare('SELECT * FROM orders WHERE id=? AND status=?').get(orderId, 'pending');
+    const claimOrder = db.transaction(() => {
+      const order = db.prepare("SELECT * FROM orders WHERE id=? AND status='pending'").get(orderId);
       if (!order) return { error: 'Order tidak ditemukan atau sudah diproses.' };
 
-      const credential = db.prepare('SELECT * FROM credentials WHERE product_id=? AND is_sold=0 ORDER BY id LIMIT 1')
-        .get(order.product_id);
-      if (!credential) return { error: 'Stok kredensial habis.' };
+      const credential = db.prepare(`
+        SELECT * FROM credentials
+        WHERE product_id=? AND is_sold=0
+        ORDER BY id LIMIT 1
+      `).get(order.product_id);
+      if (!credential) return { error: 'Stock kredensial habis.' };
 
-      const claimed = db.prepare('UPDATE credentials SET is_sold=1, order_id=? WHERE id=? AND is_sold=0')
-        .run(orderId, credential.id);
-      if (claimed.changes !== 1) return { error: 'Stok baru saja diambil order lain. Ulangi.' };
+      const claimed = db.prepare(`
+        UPDATE credentials SET is_sold=1, order_id=?
+        WHERE id=? AND is_sold=0
+      `).run(orderId, credential.id);
+      if (claimed.changes !== 1) return { error: 'Stock baru saja diambil order lain. Ulangi.' };
 
-      db.prepare('UPDATE orders SET status=?, credential_id=? WHERE id=?').run('delivered', credential.id, orderId);
-      db.prepare('UPDATE users SET total_order=total_order+1, total_pengeluaran=total_pengeluaran+? WHERE phone=?')
-        .run(order.amount, order.user_phone);
+      db.prepare("UPDATE orders SET status='delivered', credential_id=? WHERE id=?")
+        .run(credential.id, orderId);
+      db.prepare(`
+        UPDATE users
+        SET total_order=total_order+1,
+            total_pengeluaran=total_pengeluaran+?
+        WHERE phone=?
+      `).run(order.amount, order.user_phone);
       db.prepare('UPDATE products SET sold=sold+1 WHERE id=?').run(order.product_id);
       const product = db.prepare('SELECT * FROM products WHERE id=?').get(order.product_id);
       return { order, credential, product };
     });
 
-    const result = transaction();
+    const result = claimOrder();
     if (result.error) return sock.sendMessage(from, { text: `❌ ${result.error}` });
 
-    const buyerJid = recipientJid(result.order.user_phone);
-    await sock.sendMessage(buyerJid, {
-      text: `✅ Pesanan #${orderId} selesai.\nProduk: ${result.product.name}\n📧 Email: ${result.credential.email || '-'}\n🔑 Password/Kode: ${result.credential.password || '-'}`
+    await sock.sendMessage(getRecipientJid(result.order.user_phone), {
+      text: `✅ *PESANAN #${orderId} SELESAI*\n\nProduk: ${result.product.name}\n📧 Email/User: ${result.credential.email || '-'}\n🔑 Password/Kode: ${result.credential.password || '-'}\n\nSimpan pesan ini selama masa garansi. Kirim *#mulai* untuk membuka menu bot.`
     });
-    return sock.sendMessage(from, { text: `✅ Order #${orderId} terverifikasi dan terkirim.` });
+    return sock.sendMessage(from, { text: `✅ Order #${orderId} terverifikasi dan produk sudah dikirim.` });
   }
 
   if (cmd === 'topup') {
@@ -62,10 +75,12 @@ async function handleAdminCommand(sock, msg) {
     const result = db.prepare('UPDATE users SET saldo=saldo+? WHERE phone=?').run(amount, userKey);
     if (!result.changes) return sock.sendMessage(from, { text: '❌ Pengguna tidak ditemukan.' });
 
-    await sock.sendMessage(recipientJid(userKey), {
-      text: `💰 Saldo bertambah Rp ${amount.toLocaleString('id-ID')}. Kirim *#mulai* untuk membuka menu.`
+    await sock.sendMessage(getRecipientJid(userKey), {
+      text: `💰 *TOP UP BERHASIL*\n\nSaldo bertambah Rp ${amount.toLocaleString('id-ID')}.\nKirim *#mulai* untuk membuka menu bot.`
     });
-    return sock.sendMessage(from, { text: `✅ Top up ${userKey} sebesar Rp ${amount.toLocaleString('id-ID')} berhasil.` });
+    return sock.sendMessage(from, {
+      text: `✅ Top up ${userKey} sebesar Rp ${amount.toLocaleString('id-ID')} berhasil.`
+    });
   }
 
   if (cmd === 'addcred') {
@@ -73,20 +88,22 @@ async function handleAdminCommand(sock, msg) {
     const email = args[2];
     const password = args.slice(3).join(' ');
     if (!productId || !email || !password) {
-      return sock.sendMessage(from, { text: 'Format: /addcred <product_id> <email> <password/kode>' });
+      return sock.sendMessage(from, {
+        text: 'Format: /addcred <product_id> <email/user> <password/kode>'
+      });
     }
 
     const product = db.prepare('SELECT id FROM products WHERE id=?').get(productId);
     if (!product) return sock.sendMessage(from, { text: '❌ Produk tidak ditemukan.' });
 
-    db.prepare('INSERT INTO credentials (product_id, email, password) VALUES (?,?,?)')
+    db.prepare('INSERT INTO credentials (product_id, email, password) VALUES (?, ?, ?)')
       .run(productId, email, password);
-    return sock.sendMessage(from, { text: '✅ Stok berhasil ditambahkan.' });
+    return sock.sendMessage(from, { text: '✅ Stock produk berhasil ditambahkan.' });
   }
 
   if (cmd === 'help') {
     return sock.sendMessage(from, {
-      text: '*ADMIN COMMAND*\n/verifikasi <order_id>\n/topup <nomor/ID> <jumlah>\n/addcred <product_id> <email> <password/kode>'
+      text: `*ADMIN COMMAND*\n/verifikasi <order_id>\n/topup <nomor/ID> <jumlah>\n/addcred <product_id> <email/user> <password/kode>`
     });
   }
 }
